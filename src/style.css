@@ -136,3 +136,9 @@ button { cursor: pointer; }
   .busy { top: 96px; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+dialog.ask { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 20px; max-width: min(440px, calc(100vw - 32px)); box-sizing: border-box; }
+dialog.ask::backdrop { background: rgba(0, 0, 0, .45); }
+dialog.ask h2 { margin: 0 0 8px; font-size: 18px; }
+dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.ask-btns { display: flex; flex-wrap: wrap; gap: 8px; }

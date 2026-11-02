@@ -143,6 +143,12 @@ button { cursor: pointer; }
 }
 @media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
 
+dialog.ask { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); color: var(--ink); padding: 20px; max-width: min(440px, calc(100vw - 32px)); box-sizing: border-box; }
+dialog.ask::backdrop { background: rgba(0, 0, 0, .45); }
+dialog.ask h2 { margin: 0 0 8px; font-size: 18px; }
+dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
+.ask-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+
 </style>
 <div class="app" dir="rtl" lang="he">
   <header class="top">
@@ -2211,12 +2217,11 @@ function renderPanel() {
     slider('רוחב צוואר המחבר', '', 'frame.knobW', 3, 8, 0.5, 'מ"מ'),
     slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.1', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
     el('div', { class: 'field-label' }, 'תלייה על הקיר'),
-    el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: fr.hang.on, onchange: (e) => { fr.hang.on = e.target.checked; commit(); renderPanel(); schedule(); } }), 'חורי תלייה בארבע הפינות'),
-    fr.hang.on ? el('p', { class: 'hint' }, 'ליד כל פינה יש מאחור חור מנעול בצורת L: ראש הבורג נכנס בעיגול, והפאנל מחליק עד שהבורג נתפס בקצה הזרוע. הזרוע האנכית לתלייה לאורך והזרוע שפונה לצד לתלייה לרוחב, ותמיד משתמשים בשני הברגים העליונים. החלקים והחלוקה נראים בדיוק כמו בלי חורי תלייה: החור ממוקם רק מתחת לחלק שיש בתוכו מקום לחלל, גם אם הוא לא בפינה ממש.') : null,
-    fr.hang.on ? slider('קוטר ראש הבורג', '', 'frame.hang.head', 6, 12, 0.1, 'מ"מ') : null,
-    fr.hang.on ? slider('קוטר גוף הבורג', '', 'frame.hang.shank', 3, 6, 0.1, 'מ"מ') : null,
-    fr.hang.on ? slider('עובי ראש הבורג', 'דק יותר = יותר חלקים מתאימים', 'frame.hang.headH', 2, 6, 0.1, 'מ"מ') : null,
-    fr.hang.on ? slider('אורך ההחלקה', '', 'frame.hang.slot', 8, 20, 0.5, 'מ"מ') : null,
+    el('p', { class: 'hint' }, 'חורי התלייה לא מחושבים בזמן העבודה, כדי שהכול יגיב מהר. בלחיצה על "הורד ערכת הדפסה" תישאל אם להוסיף אותם, ואז הם מתווספים לחלקים ולמפת ההרכבה. ליד כל פינה יש מאחור חור מנעול בצורת L: ראש הבורג נכנס בעיגול, והפאנל מחליק עד שהבורג נתפס בקצה הזרוע. הזרוע האנכית לתלייה לאורך והזרוע שפונה לצד לתלייה לרוחב, ותמיד משתמשים בשני הברגים העליונים. החלקים והחלוקה נראים בדיוק כמו בלי חורי תלייה: החור ממוקם רק מתחת לחלק שיש בתוכו מקום לחלל, גם אם הוא לא בפינה ממש.'),
+    slider('קוטר ראש הבורג', '', 'frame.hang.head', 6, 12, 0.1, 'מ"מ'),
+    slider('קוטר גוף הבורג', '', 'frame.hang.shank', 3, 6, 0.1, 'מ"מ'),
+    slider('עובי ראש הבורג', 'דק יותר = יותר חלקים מתאימים', 'frame.hang.headH', 2, 6, 0.1, 'מ"מ'),
+    slider('אורך ההחלקה', '', 'frame.hang.slot', 8, 20, 0.5, 'מ"מ'),
     slider('זווית מקסימלית בלי תמיכות', '', 'print.overhang', 30, 60, 1, '°'),
     el('div', {}, el('div', { class: 'field-label', style: 'margin-bottom:6px' }, 'צבע המסגרת'), swatchGrid(fr.color, c => { fr.color = c; commit(); renderPanel(); schedule(); }))
   ]));
@@ -2407,12 +2412,12 @@ controls.addEventListener('change', invalidate);
 
 // ---------- rebuild pipeline ----------
 let timer = 0;
-// while a slider or point is being dragged, build a quick preview (no keyholes = one pass instead of two);
-// the full build runs when the drag ends
-function schedule(draft) { clearTimeout(timer); $('#busy').hidden = false; timer = setTimeout(() => rebuild(draft === true), draft === true ? 30 : 70); }
-function rebuild(draft) {
+// the live model never has hanging keyholes (their search is the slow part of a build); they are added
+// only when the print kit is downloaded and the user asks for them
+function schedule(draft) { clearTimeout(timer); $('#busy').hidden = false; timer = setTimeout(rebuild, draft === true ? 30 : 70); }
+function rebuild() {
   const t0 = performance.now();
-  try { model = E.build(state, false, { draft: draft === true }); model.draft = draft === true; buildError = null; }
+  try { model = E.build(state, true); buildError = null; }
   catch (e) { buildError = e.message || String(e); console.warn(e); }
   $('#busy').hidden = true;
   if (!buildError) { update3D(); drawPlan(); if (!$('#viewmap').hidden) drawMap(); }
@@ -2466,13 +2471,40 @@ async function offerFile(filename, blob) {
   setTimeout(() => URL.revokeObjectURL(a.href), 30000);
 }
 const slug = s => (s || 'panel').replace(/[^\w֐-׿-]+/g, '-').replace(/^-|-$/g, '') || 'panel';
+// asks whether to add hanging keyholes; resolves true / false, or null when cancelled
+function askHang() {
+  return new Promise(res => {
+    const dlg = el('dialog', { class: 'ask', 'aria-labelledby': 'askTitle' });
+    const done = v => { dlg.close(); dlg.remove(); res(v); };
+    dlg.append(
+      el('h2', { id: 'askTitle' }, 'האם להוסיף חורי תלייה?'),
+      el('p', {}, 'חורי מנעול בצורת L ליד ארבע הפינות, בתוך החלקים שיש בהם מקום, לפי המנגנון שגיבשנו. מפת ההרכבה תתעדכן בהתאם. החישוב לוקח כמה שניות.'),
+      el('div', { class: 'ask-btns' },
+        el('button', { class: 'primary', onclick: () => done(true) }, 'כן, להוסיף חורי תלייה'),
+        el('button', { class: 'btn', onclick: () => done(false) }, 'לא, בלי חורים'),
+        el('button', { class: 'btn', onclick: () => done(null) }, 'ביטול')));
+    dlg.addEventListener('cancel', e => { e.preventDefault(); done(null); });
+    document.body.append(dlg); dlg.showModal();
+  });
+}
 $('#kitBtn').addEventListener('click', async () => {
-  if (model && model.draft) { clearTimeout(timer); rebuild(false); }
+  clearTimeout(timer); rebuild();
   if (!model) return;
-  const btn = $('#kitBtn'); btn.disabled = true; const old = btn.innerHTML; btn.lastChild.textContent = 'מכין קבצים…';
+  const hang = await askHang();
+  if (hang === null) return;
+  const btn = $('#kitBtn'); btn.disabled = true; const old = btn.innerHTML;
+  btn.lastChild.textContent = hang ? 'מחשב חורי תלייה…' : 'מכין קבצים…';
+  await new Promise(r => setTimeout(r, 30));   // let the label paint before the long build
   try {
-    const names = state.color.bands.map(h => (PR.palette.find(p => p[1] === h.toLowerCase()) || [h.slice(1)])[0]);
-    const { blob } = await K.buildKit(model, state, window.JSZip, { colorNames: names.map(n => /^[0-9a-f]{6}$/i.test(n) ? n : n) });
+    const st = clone(state); st.frame.hang = Object.assign({}, st.frame.hang, { on: hang });
+    const km = hang ? E.build(st) : model;
+    if (hang) {
+      btn.lastChild.textContent = 'מכין קבצים…';
+      const hw = km.warnings.filter(w => /תלייה|חור/.test(w.text));
+      if (hw.length) toast(hw.map(w => w.text).join(' '), 9000);
+    }
+    const names = st.color.bands.map(h => (PR.palette.find(p => p[1] === h.toLowerCase()) || [h.slice(1)])[0]);
+    const { blob } = await K.buildKit(km, st, window.JSZip, { colorNames: names.map(n => /^[0-9a-f]{6}$/i.test(n) ? n : n) });
     await offerFile('tavlit-print-kit.zip', blob);
   } catch (e) { console.error(e); toast('יצירת הערכה נכשלה: ' + e.message, 6000); }
   btn.innerHTML = old; btn.disabled = false;
