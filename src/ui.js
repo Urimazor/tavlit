@@ -19,7 +19,7 @@ function normalize(s) {
   const base = clone(PR.presets[1].state);
   for (const k of Object.keys(base)) if (typeof base[k] === 'object' && !Array.isArray(base[k])) s[k] = Object.assign({}, base[k], s[k] || {});
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
-  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0 }, s.piece || {});
+  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
   s.frame = Object.assign({ joint: 9, jointClr: 0.05, knobW: 5 }, s.frame);
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
   if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; if (s.frame.jointClr === 0.15) s.frame.jointClr = 0.05; s.fitCal = 1; }
@@ -90,6 +90,7 @@ function section(key, n, title, summary, body) {
 const SHAPES = [['rect', 'מלבן'], ['circle', 'עיגול'], ['ellipse', 'אליפסה'], ['hexagon', 'משושה'], ['octagon', 'מתומן']];
 const TESS = [['hex', 'משושים'], ['square', 'ריבועים'], ['triangle', 'משולשים'], ['radial', 'רדיאלי'], ['voronoi', 'וורונוי'], ['sunflower', 'חמנייה']];
 const SURF = [['flat', 'שטוח'], ['dome', 'כיפה'], ['bowl', 'קערה'], ['cone', 'חרוט'], ['ring', 'טבעת'], ['wave', 'גל'], ['ripple', 'אדוות'], ['tilt', 'שיפוע'], ['noise', 'אורגני']];
+const CUTBY = [['field', 'לפי התנועה'], ['radial', 'מהמרכז החוצה'], ['spiral', 'ספירלה'], ['surface', 'שיפוע פני השטח'], ['fixed', 'כיוון קבוע']];
 const COLBY = [['height', 'לפי גובה'], ['gradient', 'מעבר'], ['radial', 'מהמרכז'], ['field', 'לפי תנועה'], ['random', 'אקראי']];
 const name = (list, v) => (list.find(x => x[0] === v) || [, v])[1];
 const PT = {
@@ -147,8 +148,14 @@ function renderPanel() {
     slider('עובי', 'קטן = נפוח, גדול = דק וחד', 'piece.profile', 0.4, 2.5, 0.05, ''),
     slider('שכבות', 'יותר = עיקול חלק יותר', 'piece.layers', 3, 48, 1, ''),
     slider('התמזגות לצורה אחת', 'הפאות של הבסיס נמסות בהדרגה לצורה עגולה וחלקה כלפי מעלה', 'piece.smooth', 0, 1, 0.05, ''),
-    slider('קיטום', '0 = שפיץ מלא, 1 = קטום נמוך', 'piece.truncate', 0, 1, 0.05, '', { onCommit: () => renderPanel() }),
-    pc.truncate > 0 ? slider('כיפתיות', '0 = חיתוך ישר, 1 = כיפה מעוגלת', 'piece.dome', 0, 1, 0.05, '') : null
+    slider('קיטום', '0 = שפיץ מלא, 1 = קטום נמוך, 1.5 = קטום נמוך מאוד', 'piece.truncate', 0, 1.5, 0.05, '', { onCommit: () => renderPanel() }),
+    pc.truncate > 0 ? slider('כיפתיות', '0 = חיתוך ישר, 1 = כיפה מעוגלת', 'piece.dome', 0, 1, 0.05, '') : null,
+    pc.truncate > 0 ? el('div', { class: 'field-label' }, 'זווית הקיטום') : null,
+    pc.truncate > 0 ? el('p', { class: 'hint' }, 'במקום חיתוך מקביל לקיר, משטח החיתוך נוטה ופונה לכיוון מסוים. הכיוון יכול לבוא מנקודות התנועה (מערבולת, מגנט, זרם), מהמרכז, מספירלה או משיפוע פני השטח. לכל נקודת תנועה אפשר גם להוסיף זווית משלה.') : null,
+    pc.truncate > 0 ? slider('זווית קיטום', '0 = אופקי, מקביל לקיר', 'piece.cutTilt', 0, 75, 1, '°') : null,
+    pc.truncate > 0 ? chips('מה קובע לאן המשטח פונה', 'piece.cutBy', CUTBY) : null,
+    pc.truncate > 0 ? slider(pc.cutBy === 'fixed' ? 'כיוון' : 'סיבוב הכיוון', pc.cutBy === 'fixed' ? 'לאן פונה המשטח החתוך' : '180 = הפוך, 90 = לרוחב', 'piece.cutAngle', -180, 180, 1, '°') : null,
+    pc.truncate > 0 && pc.cutBy !== 'fixed' ? slider('זווית לפי עוצמה', '0 = אותה זווית בכל הלוח, 1 = הזווית גדלה איפה שההשפעה חזקה', 'piece.cutVary', 0, 1, 0.05, '') : null
   ]));
 
   // 5 movement
@@ -172,6 +179,7 @@ function renderPanel() {
     p.type === 'current' ? slider('כיוון', '', `move.points.${selPoint}.angle`, -180, 180, 1, '°') : null,
     slider('קימור נוסף', 'לחלקים באזור הנקודה', `move.points.${selPoint}.curve`, -1, 1.5, 0.05, ''),
     slider('סחרור נוסף', 'לחלקים באזור הנקודה', `move.points.${selPoint}.spiral`, -180, 180, 1, '°'),
+    slider('זווית קיטום נוספת', 'לחלקים קטומים באזור הנקודה', `move.points.${selPoint}.cut`, -60, 60, 1, '°'),
     slider('רדיוס', 'השפעה מלאה', `move.points.${selPoint}.radius`, 0, R, 1, 'מ"מ'),
     slider('דעיכה', 'עד שההשפעה נעלמת', `move.points.${selPoint}.fade`, 1, R * 1.5, 1, 'מ"מ'),
     slider('מיקום אופקי', '', `move.points.${selPoint}.x`, -s.shape.w / 2, s.shape.w / 2, 1, 'מ"מ'),
