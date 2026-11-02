@@ -20,9 +20,12 @@ function normalize(s) {
   for (const k of Object.keys(base)) if (typeof base[k] === 'object' && !Array.isArray(base[k])) s[k] = Object.assign({}, base[k], s[k] || {});
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
   s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
-  s.frame = Object.assign({ joint: 9, jointClr: 0.05, knobW: 5 }, s.frame);
+  s.frame = Object.assign({ joint: 9, jointClr: 0.1, knobW: 5 }, s.frame);
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
-  if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; if (s.frame.jointClr === 0.15) s.frame.jointClr = 0.05; s.fitCal = 1; }
+  if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; s.fitCal = 1; }
+  // Uri's printed frame (2026-11-02): tiles at 0.05 mm were too tight to join; dovetails default to 0.1 mm.
+  // Press-fit (frame.clr) stays 0.05. Move designs still on an old dovetail default (0.15 / 0.05) to 0.1.
+  if (s.fitCal < 2) { if (s.frame.jointClr === 0.15 || s.frame.jointClr === 0.05) s.frame.jointClr = 0.1; s.fitCal = 2; }
   s.frame.hang = Object.assign({ on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 }, s.frame.hang || {});
   if (!Array.isArray(s.color.bands) || !s.color.bands.length) s.color.bands = base.color.bands;
   s.name = s.name || 'עיצוב חדש';
@@ -196,7 +199,7 @@ function renderPanel() {
   // 5 frame & fit
   const fr = s.frame;
   panel.append(section('frame', 6, 'מסגרת והתאמה', `עובי ${fr.t} · מרווח ${fr.clr} מ"מ`, [
-    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל לשני המרווחים (נעיצה ומחבר) היא 0.05 מ"מ, לפי בדיקת ההתאמה על ה-MK4.'),
+    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל למרווח הנעיצה היא 0.05 מ"מ ולמרווח במחבר בין אריחים 0.1 מ"מ, לפי בדיקות ההדפסה על ה-MK4.'),
     slider('עובי המסגרת', '', 'frame.t', 2, 6, 0.2, 'מ"מ'),
     slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 6, 0.1, 'מ"מ'),
     slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.05', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
@@ -205,7 +208,7 @@ function renderPanel() {
     el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. בכל חיבור יש מחברי זנב יונה שננעלים כמו פאזל, ודבק רק מקבע אותם.'),
     slider('רוחב צלע בחיבור', 'מקום למחבר', 'frame.joint', 6, 14, 0.5, 'מ"מ'),
     slider('רוחב צוואר המחבר', '', 'frame.knobW', 3, 8, 0.5, 'מ"מ'),
-    slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.05', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
+    slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.1', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
     el('div', { class: 'field-label' }, 'תלייה על הקיר'),
     el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: fr.hang.on, onchange: (e) => { fr.hang.on = e.target.checked; commit(); renderPanel(); schedule(); } }), 'חורי תלייה בארבע הפינות'),
     fr.hang.on ? el('p', { class: 'hint' }, 'ליד כל פינה יש מאחור חור מנעול בצורת L: ראש הבורג נכנס בעיגול, והפאנל מחליק עד שהבורג נתפס בקצה הזרוע. הזרוע האנכית לתלייה לאורך והזרוע שפונה לצד לתלייה לרוחב, ותמיד משתמשים בשני הברגים העליונים. החלקים והחלוקה נראים בדיוק כמו בלי חורי תלייה: החור ממוקם רק מתחת לחלק שיש בתוכו מקום לחלל, גם אם הוא לא בפינה ממש.') : null,
