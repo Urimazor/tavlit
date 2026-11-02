@@ -1,0 +1,22 @@
+{
+  "name": "tavlit",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "d3-delaunay": "^6.0.4",
+    "earcut": "^2.2.4",
+    "jszip": "^3.10.1",
+    "polygon-clipping": "^0.15.7",
+    "three": "^0.160.0"
+  }
+}

@@ -1,0 +1,85 @@
+<title>תבליט – סטודיו לפאנל קיר</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=Secular+One&display=swap">
+<style>
+/*STYLE*/
+</style>
+<div class="app" dir="rtl" lang="he">
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 30 30" aria-hidden="true">
+        <polygon points="15,1 27,8 27,22 15,29 3,22 3,8" fill="var(--ink)"/>
+        <polygon points="15,6 22.5,10.5 15,15 7.5,10.5" fill="var(--accent)"/>
+        <polygon points="7.5,10.5 15,15 15,24 7.5,19.5" fill="var(--panel)" opacity=".55"/>
+        <polygon points="22.5,10.5 15,15 15,24 22.5,19.5" fill="var(--panel)" opacity=".85"/>
+      </svg>
+      <div>
+        <div class="brand-name">תבליט</div>
+        <div class="brand-sub">פאנל קיר להדפסה בחלקים</div>
+      </div>
+    </div>
+    <input id="designName" class="name-input" aria-label="שם העיצוב">
+    <select id="presetSel" aria-label="עיצובים מוכנים"></select>
+    <span class="spacer"></span>
+    <button id="undoBtn" class="icon-btn" title="בטל" aria-label="בטל"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7h-7v-4M7 7a8 8 0 1 1-2 6"/></svg></button>
+    <button id="redoBtn" class="icon-btn" title="בצע שוב" aria-label="בצע שוב"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 7h7v-4M17 7a8 8 0 1 0 2 6"/></svg></button>
+    <button id="saveBtn" class="icon-btn">שמור עיצוב</button>
+    <label class="icon-btn" for="loadFile" style="cursor:pointer">טען עיצוב</label>
+    <input id="loadFile" type="file" accept=".json,application/json" hidden>
+  </header>
+
+  <aside class="panel" id="panel" aria-label="הגדרות"></aside>
+
+  <main class="stage">
+    <div class="stage-tabs">
+      <div class="seg" role="group" aria-label="תצוגה">
+        <button id="tab3d" aria-pressed="true">תלת־ממד</button>
+        <button id="tabMap" aria-pressed="false">מפת הרכבה</button>
+      </div>
+    </div>
+    <div class="stage-views" id="camViews">
+      <div class="seg" role="group" aria-label="זווית מצלמה">
+        <button data-cam="iso" aria-pressed="true">אלכסון</button>
+        <button data-cam="front" aria-pressed="false">חזית</button>
+        <button data-cam="side" aria-pressed="false">צד</button>
+      </div>
+      <div class="seg" role="group" aria-label="מה להציג">
+        <button id="showFrame" aria-pressed="true">מסגרת</button>
+        <button id="showPieces" aria-pressed="true">חלקים</button>
+      </div>
+    </div>
+    <div id="view3d"></div>
+    <div id="viewmap" hidden></div>
+    <div class="busy" id="busy" hidden>מחשב…</div>
+    <div class="stage-note" id="stageNote">גרירה: סיבוב · Shift או כפתור ימני: הזזה · גלגלת: זום</div>
+  </main>
+
+  <footer class="bar">
+    <button id="kitBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>הורד ערכת הדפסה</button>
+    <button id="fitBtn" class="btn">בדיקת התאמה</button>
+    <div class="msg" id="msg" aria-live="polite"></div>
+    <div class="stats" id="stats"></div>
+  </footer>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6.0.4/dist/d3-delaunay.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/*ENGINE*/
+</script>
+<script>
+/*KIT*/
+</script>
+<script>
+/*PRESETS*/
+</script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+/*UI*/
+</script>

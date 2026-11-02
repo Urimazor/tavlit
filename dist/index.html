@@ -1,0 +1,2396 @@
+<title>תבליט – סטודיו לפאנל קיר</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Hebrew:wght@400;500;600&family=Secular+One&display=swap">
+<style>
+/* Layout: one-screen workbench — settings rail on the right (RTL), model stage on the left, print bar along the bottom. */
+:root {
+  --bg: #e6e8e3;
+  --panel: #f5f6f3;
+  --raised: #ffffff;
+  --ink: #1b211e;
+  --muted: #5d6661;
+  --line: #d0d5ce;
+  --accent: #d6960a;
+  --accent-ink: #1b211e;
+  --focus: #1f6feb;
+  --warn: #b4530a;
+  --warn-bg: #fdf0e1;
+  --stage: #d9dbd6;
+  --f-display: "Secular One", "IBM Plex Sans Hebrew", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans Hebrew", "Segoe UI", system-ui, sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 8px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #141816; --panel: #1b201d; --raised: #232925; --ink: #e7ebe8; --muted: #9aa49f; --line: #313a35;
+    --accent: #f0b429; --accent-ink: #141816; --focus: #6aa7ff; --warn: #f3a65a; --warn-bg: #3a2a17; --stage: #202622;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #141816; --panel: #1b201d; --raised: #232925; --ink: #e7ebe8; --muted: #9aa49f; --line: #313a35;
+  --accent: #f0b429; --accent-ink: #141816; --focus: #6aa7ff; --warn: #f3a65a; --warn-bg: #3a2a17; --stage: #202622;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
+* { box-sizing: border-box; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+
+.app { display: grid; height: 100%; grid-template-columns: minmax(300px, 360px) 1fr; grid-template-rows: auto 1fr auto; grid-template-areas: "top top" "panel stage" "bar bar"; }
+.top { grid-area: top; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-bottom: 1px solid var(--line); background: var(--panel); }
+.brand { display: flex; align-items: center; gap: 10px; }
+.brand-mark { width: 30px; height: 30px; flex: none; }
+.brand-name { font-family: var(--f-display); font-size: 22px; letter-spacing: .01em; line-height: 1; }
+.brand-sub { color: var(--muted); font-size: 12px; }
+.top .spacer { flex: 1; }
+.name-input { border: 1px solid var(--line); background: var(--raised); border-radius: var(--r); padding: 6px 10px; min-width: 0; width: 200px; }
+.top select { border: 1px solid var(--line); background: var(--raised); border-radius: var(--r); padding: 6px 8px; max-width: 240px; }
+.icon-btn { border: 1px solid var(--line); background: var(--raised); border-radius: var(--r); padding: 6px 10px; display: inline-flex; align-items: center; gap: 6px; }
+.icon-btn:disabled { opacity: .4; cursor: default; }
+.icon-btn svg { width: 16px; height: 16px; }
+
+.panel { grid-area: panel; overflow-y: auto; border-left: 1px solid var(--line); background: var(--panel); padding-bottom: 24px; }
+.sec { border-bottom: 1px solid var(--line); }
+.sec-head { width: 100%; display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: none; border: 0; text-align: right; }
+.hexnum { width: 26px; height: 28px; flex: none; display: grid; place-items: center; font-family: var(--f-display); font-size: 14px; clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%); background: var(--line); color: var(--ink); }
+.sec.open .hexnum { background: var(--accent); color: var(--accent-ink); }
+.sec-title { font-weight: 600; font-size: 15px; }
+.sec-sum { color: var(--muted); font-size: 12px; display: block; font-weight: 400; }
+.sec-head .chev { margin-inline-start: auto; transition: transform .15s; color: var(--muted); }
+.sec.open .chev { transform: rotate(180deg); }
+.sec-body { padding: 2px 16px 16px; display: none; flex-direction: column; gap: 12px; }
+.sec.open .sec-body { display: flex; }
+.hint { color: var(--muted); font-size: 12px; margin: 0; }
+
+.row { display: grid; grid-template-columns: 1fr 104px; gap: 4px 10px; align-items: center; }
+.row label { font-size: 13px; }
+.row label small { color: var(--muted); font-size: 11.5px; margin-inline-start: 4px; }
+.row .num { display: flex; align-items: center; border: 1px solid var(--line); border-radius: 6px; background: var(--raised); }
+.row .num input { width: 100%; border: 0; background: none; padding: 4px 6px; font-family: var(--f-mono); font-size: 12.5px; font-variant-numeric: tabular-nums; text-align: left; direction: ltr; min-width: 0; }
+.row .num span { color: var(--muted); font-size: 11px; padding-inline-end: 6px; white-space: nowrap; }
+.row input[type=range] { grid-column: 1 / -1; width: 100%; accent-color: var(--accent); direction: ltr; margin: 0; }
+
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip { border: 1px solid var(--line); background: var(--raised); border-radius: 999px; padding: 4px 11px; font-size: 13px; }
+.chip[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+.field-label { font-size: 13px; font-weight: 600; }
+.check { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+.check input { accent-color: var(--accent); width: 16px; height: 16px; }
+
+.plan-wrap { position: relative; border: 1px solid var(--line); border-radius: var(--r); background: var(--raised); overflow: hidden; }
+.plan-wrap canvas { display: block; width: 100%; touch-action: none; cursor: crosshair; }
+.plan-help { position: absolute; inset: auto 8px 6px auto; font-size: 11px; color: var(--muted); pointer-events: none; }
+.tools { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.tool { border: 1px solid var(--line); background: var(--raised); border-radius: var(--r); padding: 8px 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; font-size: 13px; }
+.tool small { color: var(--muted); font-size: 11px; }
+.tool svg { width: 22px; height: 22px; }
+.tool[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.pointlist { display: flex; flex-wrap: wrap; gap: 6px; }
+.pt-editor { border: 1px solid var(--line); border-radius: var(--r); padding: 12px; display: flex; flex-direction: column; gap: 10px; background: var(--raised); }
+.btn-row { display: flex; gap: 6px; }
+.btn { border: 1px solid var(--line); background: var(--raised); border-radius: var(--r); padding: 6px 12px; font-size: 13px; }
+.btn.small { padding: 4px 9px; font-size: 12.5px; }
+
+.bands { display: flex; gap: 6px; flex-wrap: wrap; }
+.band { width: 46px; height: 34px; border-radius: 6px; border: 2px solid transparent; position: relative; font-family: var(--f-mono); font-size: 11px; display: grid; place-items: end start; padding: 2px 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+.band[aria-pressed="true"] { border-color: var(--ink); }
+.swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 6px; }
+.sw { aspect-ratio: 1; border-radius: 50%; border: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,.18); }
+.sw[aria-pressed="true"] { outline: 2px solid var(--ink); outline-offset: 2px; }
+.custom-color { display: flex; align-items: center; gap: 8px; font-size: 12.5px; color: var(--muted); }
+.custom-color input { width: 34px; height: 26px; border: 1px solid var(--line); border-radius: 6px; padding: 0; background: none; }
+
+.stage { grid-area: stage; position: relative; background: var(--stage); min-height: 0; overflow: hidden; }
+.stage-tabs { position: absolute; top: 12px; inset-inline-start: 12px; z-index: 3; display: flex; gap: 6px; flex-wrap: wrap; }
+.stage-views { position: absolute; top: 12px; inset-inline-end: 12px; z-index: 3; display: flex; gap: 6px; flex-wrap: wrap; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; background: var(--raised); }
+.seg button { border: 0; background: none; padding: 6px 12px; font-size: 13px; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+#view3d { position: absolute; inset: 0; }
+#view3d canvas { display: block; }
+#viewmap { position: absolute; inset: 0; overflow: auto; padding: 64px 16px 16px; }
+#viewmap svg { width: 100%; height: auto; max-height: calc(100% - 8px); display: block; margin: 0 auto; background: #fff; border-radius: 4px; box-shadow: 0 1px 3px rgba(0,0,0,.15); }
+.stage-note { position: absolute; bottom: 10px; inset-inline-end: 12px; font-size: 11.5px; color: var(--muted); z-index: 2; pointer-events: none; }
+.busy { position: absolute; top: 56px; inset-inline-start: 12px; z-index: 3; font-size: 12px; color: var(--muted); }
+
+.bar { grid-area: bar; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
+.primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--r); padding: 10px 18px; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+.primary:disabled { opacity: .55; cursor: progress; }
+.primary svg { width: 18px; height: 18px; }
+.msg { flex: 1 1 260px; min-width: 0; font-size: 12.5px; color: var(--muted); }
+.msg .warn { color: var(--warn); }
+.msg .err { color: var(--warn); font-weight: 600; }
+.stats { display: flex; gap: 18px; }
+.stat { display: flex; flex-direction: column; align-items: center; line-height: 1.1; }
+.stat b { font-family: var(--f-mono); font-size: 17px; font-weight: 500; font-variant-numeric: tabular-nums; direction: ltr; }
+.stat span { font-size: 10.5px; color: var(--muted); letter-spacing: .04em; }
+.toast { position: fixed; bottom: calc(76px + env(safe-area-inset-bottom, 0px)); left: 50%; transform: translateX(-50%); background: var(--ink); color: var(--panel); padding: 8px 14px; border-radius: var(--r); font-size: 13px; z-index: 20; max-width: calc(100% - 32px); }
+
+@media (max-width: 860px) {
+  html, body { height: auto; }
+  .app { height: auto; grid-template-columns: 1fr; grid-template-rows: auto 62vh auto auto; grid-template-areas: "top" "stage" "bar" "panel"; }
+  .panel { border-left: 0; overflow: visible; }
+  .name-input { width: 140px; }
+  .stats { gap: 12px; }
+  .stage-views { top: 54px; inset-inline-end: auto; inset-inline-start: 12px; }
+  .busy { top: 96px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+
+</style>
+<div class="app" dir="rtl" lang="he">
+  <header class="top">
+    <div class="brand">
+      <svg class="brand-mark" viewBox="0 0 30 30" aria-hidden="true">
+        <polygon points="15,1 27,8 27,22 15,29 3,22 3,8" fill="var(--ink)"/>
+        <polygon points="15,6 22.5,10.5 15,15 7.5,10.5" fill="var(--accent)"/>
+        <polygon points="7.5,10.5 15,15 15,24 7.5,19.5" fill="var(--panel)" opacity=".55"/>
+        <polygon points="22.5,10.5 15,15 15,24 22.5,19.5" fill="var(--panel)" opacity=".85"/>
+      </svg>
+      <div>
+        <div class="brand-name">תבליט</div>
+        <div class="brand-sub">פאנל קיר להדפסה בחלקים</div>
+      </div>
+    </div>
+    <input id="designName" class="name-input" aria-label="שם העיצוב">
+    <select id="presetSel" aria-label="עיצובים מוכנים"></select>
+    <span class="spacer"></span>
+    <button id="undoBtn" class="icon-btn" title="בטל" aria-label="בטל"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 7h-7v-4M7 7a8 8 0 1 1-2 6"/></svg></button>
+    <button id="redoBtn" class="icon-btn" title="בצע שוב" aria-label="בצע שוב"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 7h7v-4M17 7a8 8 0 1 0 2 6"/></svg></button>
+    <button id="saveBtn" class="icon-btn">שמור עיצוב</button>
+    <label class="icon-btn" for="loadFile" style="cursor:pointer">טען עיצוב</label>
+    <input id="loadFile" type="file" accept=".json,application/json" hidden>
+  </header>
+
+  <aside class="panel" id="panel" aria-label="הגדרות"></aside>
+
+  <main class="stage">
+    <div class="stage-tabs">
+      <div class="seg" role="group" aria-label="תצוגה">
+        <button id="tab3d" aria-pressed="true">תלת־ממד</button>
+        <button id="tabMap" aria-pressed="false">מפת הרכבה</button>
+      </div>
+    </div>
+    <div class="stage-views" id="camViews">
+      <div class="seg" role="group" aria-label="זווית מצלמה">
+        <button data-cam="iso" aria-pressed="true">אלכסון</button>
+        <button data-cam="front" aria-pressed="false">חזית</button>
+        <button data-cam="side" aria-pressed="false">צד</button>
+      </div>
+      <div class="seg" role="group" aria-label="מה להציג">
+        <button id="showFrame" aria-pressed="true">מסגרת</button>
+        <button id="showPieces" aria-pressed="true">חלקים</button>
+      </div>
+    </div>
+    <div id="view3d"></div>
+    <div id="viewmap" hidden></div>
+    <div class="busy" id="busy" hidden>מחשב…</div>
+    <div class="stage-note" id="stageNote">גרירה: סיבוב · Shift או כפתור ימני: הזזה · גלגלת: זום</div>
+  </main>
+
+  <footer class="bar">
+    <button id="kitBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>הורד ערכת הדפסה</button>
+    <button id="fitBtn" class="btn">בדיקת התאמה</button>
+    <div class="msg" id="msg" aria-live="polite"></div>
+    <div class="stats" id="stats"></div>
+  </footer>
+</div>
+<div class="toast" id="toast" hidden></div>
+
+<script src="https://cdn.jsdelivr.net/npm/d3-delaunay@6.0.4/dist/d3-delaunay.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/polygon-clipping@0.15.7/dist/polygon-clipping.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/earcut@2.2.4/dist/earcut.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+<script>
+/* WallEngine — parametric relief wall panel generator.
+   Pure functions, no DOM. Units: millimetres. Panel lies in XY, relief grows toward +Z.
+   Requires global d3 (d3-delaunay) for Voronoi tessellations. */
+(function (root) {
+  'use strict';
+
+  // ---------- random ----------
+  function rng(seed) {
+    let a = (seed >>> 0) || 1;
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // ---------- 2D polygon utils (polygons are arrays of [x,y], CCW) ----------
+  function area(p) {
+    let s = 0;
+    for (let i = 0, n = p.length; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n];
+      s += a[0] * b[1] - b[0] * a[1];
+    }
+    return s / 2;
+  }
+  function centroid(p) {
+    let cx = 0, cy = 0, s = 0;
+    for (let i = 0, n = p.length; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n];
+      const f = a[0] * b[1] - b[0] * a[1];
+      s += f; cx += (a[0] + b[0]) * f; cy += (a[1] + b[1]) * f;
+    }
+    if (Math.abs(s) < 1e-9) {
+      let x = 0, y = 0; p.forEach(q => { x += q[0]; y += q[1]; });
+      return [x / p.length, y / p.length];
+    }
+    return [cx / (3 * s), cy / (3 * s)];
+  }
+  function ccw(p) { return area(p) < 0 ? p.slice().reverse() : p; }
+  function bbox(p) {
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const q of p) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; }
+    return { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+  }
+  function inside(p, pt) { // convex or not, ray casting
+    let c = false;
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const a = p[i], b = p[j];
+      if (((a[1] > pt[1]) !== (b[1] > pt[1])) && (pt[0] < (b[0] - a[0]) * (pt[1] - a[1]) / (b[1] - a[1]) + a[0])) c = !c;
+    }
+    return c;
+  }
+  // Sutherland–Hodgman: clip subject by convex CCW clip polygon
+  function clipConvex(subject, clip) {
+    let out = subject;
+    for (let i = 0; i < clip.length && out.length; i++) {
+      const A = clip[i], B = clip[(i + 1) % clip.length];
+      const inp = out; out = [];
+      const side = q => (B[0] - A[0]) * (q[1] - A[1]) - (B[1] - A[1]) * (q[0] - A[0]);
+      for (let j = 0; j < inp.length; j++) {
+        const P = inp[j], Q = inp[(j + 1) % inp.length];
+        const sp = side(P), sq = side(Q);
+        if (sp >= 0) out.push(P);
+        if ((sp >= 0) !== (sq >= 0)) {
+          const t = sp / (sp - sq);
+          out.push([P[0] + (Q[0] - P[0]) * t, P[1] + (Q[1] - P[1]) * t]);
+        }
+      }
+    }
+    return out;
+  }
+  // remove near-duplicate and collinear vertices, merge short edges
+  function simplify(p, minEdge) {
+    let q = p.slice();
+    let changed = true, guard = 0;
+    while (changed && q.length > 3 && guard++ < 200) {
+      changed = false;
+      for (let i = 0; i < q.length; i++) {
+        const a = q[i], b = q[(i + 1) % q.length];
+        if (Math.hypot(b[0] - a[0], b[1] - a[1]) < minEdge) {
+          const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+          q.splice(i, 1, m); q.splice((i + 1) % (q.length), 1);
+          changed = true; break;
+        }
+      }
+      if (changed) continue;
+      for (let i = 0; i < q.length; i++) {
+        const a = q[(i - 1 + q.length) % q.length], b = q[i], c = q[(i + 1) % q.length];
+        const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+        const l = Math.hypot(b[0] - a[0], b[1] - a[1]) * Math.hypot(c[0] - b[0], c[1] - b[1]);
+        if (Math.abs(cr) < 0.02 * l) { q.splice(i, 1); changed = true; break; } // ~1.1°
+      }
+    }
+    return q;
+  }
+  function isConvexCCW(p) {
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length], c = p[(i + 2) % p.length];
+      if ((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]) < -1e-6) return false;
+    }
+    return area(p) > 0;
+  }
+  // offset convex CCW polygon inward by d, keeping vertex count; null if it collapses
+  function inset(p, d, concave) {
+    if (d === 0) return p.slice();
+    const n = p.length, lines = [];
+    for (let i = 0; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n];
+      const dx = b[0] - a[0], dy = b[1] - a[1], L = Math.hypot(dx, dy);
+      if (L < 1e-9) return null;
+      const nx = -dy / L, ny = dx / L; // left normal = interior
+      const di = Array.isArray(d) ? d[i] : d;
+      lines.push({ px: a[0] + nx * di, py: a[1] + ny * di, dx: dx / L, dy: dy / L });
+    }
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const l1 = lines[(i - 1 + n) % n], l2 = lines[i];
+      const den = l1.dx * l2.dy - l1.dy * l2.dx;
+      if (Math.abs(den) < 1e-6) { // collinear neighbours: shift the vertex along the shared normal
+        if (l1.dx * l2.dx + l1.dy * l2.dy < 0) return null;
+        out.push([l2.px, l2.py]); continue;
+      }
+      const t = ((l2.px - l1.px) * l2.dy - (l2.py - l1.py) * l2.dx) / den;
+      out.push([l1.px + l1.dx * t, l1.py + l1.dy * t]);
+    }
+    // edges must keep their direction (no flipping)
+    for (let i = 0; i < n; i++) {
+      const a = p[i], b = p[(i + 1) % n], c = out[i], e = out[(i + 1) % n];
+      if ((b[0] - a[0]) * (e[0] - c[0]) + (b[1] - a[1]) * (e[1] - c[1]) <= 0) return null;
+    }
+    if (concave ? !simpleCCW(out) : !isConvexCCW(out)) return null;
+    return out;
+  }
+
+  // counter-clockwise and no edge crosses another (for joined, non-convex outlines)
+  function simpleCCW(p) {
+    if (area(p) <= 0) return false;
+    const n = p.length;
+    const cross = (a, b, c) => (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
+    for (let i = 0; i < n; i++) for (let j = i + 2; j < n; j++) {
+      if (i === 0 && j === n - 1) continue;
+      const a = p[i], b = p[(i + 1) % n], c = p[j], d = p[(j + 1) % n];
+      if (cross(a, b, c) * cross(a, b, d) < 0 && cross(c, d, a) * cross(c, d, b) < 0) return false;
+    }
+    return true;
+  }
+  // ---------- shapes ----------
+  function makeShape(s) {
+    const W = s.w, H = s.h;
+    const pts = [];
+    if (s.type === 'rect') {
+      pts.push([-W / 2, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [-W / 2, H / 2]);
+    } else if (s.type === 'circle' || s.type === 'ellipse') {
+      const rx = s.type === 'circle' ? Math.min(W, H) / 2 : W / 2;
+      const ry = s.type === 'circle' ? rx : H / 2;
+      const n = 120;
+      for (let i = 0; i < n; i++) { const a = (i / n) * Math.PI * 2; pts.push([rx * Math.cos(a), ry * Math.sin(a)]); }
+    } else if (s.type === 'hexagon') {
+      for (let i = 0; i < 6; i++) { const a = (i / 6) * Math.PI * 2; pts.push([W / 2 * Math.cos(a), H / 2 * Math.sin(a) / Math.sin(Math.PI / 3)]); }
+      // scale y so that flat-to-flat equals H
+      const yb = bbox(pts); const k = H / yb.h; pts.forEach(q => q[1] *= k);
+    } else if (s.type === 'octagon') {
+      for (let i = 0; i < 8; i++) { const a = (i / 8) * Math.PI * 2 + Math.PI / 8; pts.push([Math.cos(a), Math.sin(a)]); }
+      const b = bbox(pts); pts.forEach(q => { q[0] *= W / b.w; q[1] *= H / b.h; });
+    }
+    return densify(ccw(pts), s.seg || 18);
+  }
+  // split long edges so the rim can be divided between frame tiles
+  function densify(p, maxLen) {
+    const out = [];
+    for (let i = 0; i < p.length; i++) {
+      const a = p[i], b = p[(i + 1) % p.length];
+      const n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / maxLen));
+      for (let k = 0; k < n; k++) out.push([a[0] + (b[0] - a[0]) * k / n, a[1] + (b[1] - a[1]) * k / n]);
+    }
+    return out;
+  }
+
+  // ---------- tessellations ----------
+  function tessellate(t, region, outer) {
+    const b = bbox(region), s = t.size, ob = bbox(outer || region);
+    const cells = [];
+    const pad = s * 2;
+    if (t.type === 'hex') {
+      const R = s / Math.sqrt(3);
+      const dy = 1.5 * R;
+      let row = 0;
+      for (let y = b.y0 - pad; y <= b.y1 + pad; y += dy, row++) {
+        const off = (row % 2) ? s / 2 : 0;
+        for (let x = b.x0 - pad + off; x <= b.x1 + pad; x += s) {
+          const c = [];
+          for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; c.push([x + R * Math.cos(a), y + R * Math.sin(a)]); }
+          cells.push(c);
+        }
+      }
+      return { cells, nominal: (3 * Math.sqrt(3) / 2) * R * R };
+    }
+    if (t.type === 'square') {
+      for (let y = b.y0 - pad; y <= b.y1 + pad; y += s)
+        for (let x = b.x0 - pad; x <= b.x1 + pad; x += s)
+          cells.push([[x, y], [x + s, y], [x + s, y + s], [x, y + s]]);
+      return { cells, nominal: s * s };
+    }
+    if (t.type === 'triangle') {
+      const a = s * 1.5, h = a * Math.sqrt(3) / 2;
+      let row = 0;
+      for (let y = b.y0 - pad; y <= b.y1 + pad; y += h, row++) {
+        const off = (row % 2) ? a / 2 : 0;
+        for (let x = b.x0 - pad + off; x <= b.x1 + pad; x += a) {
+          cells.push([[x, y], [x + a, y], [x + a / 2, y + h]]);
+          cells.push([[x + a, y], [x + a * 1.5, y + h], [x + a / 2, y + h]]);
+        }
+      }
+      return { cells, nominal: a * h / 2 };
+    }
+    if (t.type === 'radial') {
+      // cells use straight chords (pieces need convex outlines); tcells follow the true arcs on a
+      // shared angular grid so neighbouring rings meet without gaps when the frame is assembled
+      const maxR = Math.hypot(Math.max(Math.abs(ob.x0), Math.abs(ob.x1)), Math.max(Math.abs(ob.y0), Math.abs(ob.y1))) + s;
+      const n0 = Math.max(5, Math.round(t.center || 8));
+      const r0 = s * 1.1, RES = Math.PI / 360;
+      const pol = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
+      const arc = (r, a0, a1) => { const out = [pol(r, a0)]; for (let g = Math.floor(a0 / RES) + 1; g * RES < a1 - 1e-9; g++) out.push(pol(r, g * RES)); out.push(pol(r, a1)); return out; };
+      const tcells = [];
+      for (let k = 0; k < n0; k++) {
+        const a0 = (k / n0) * Math.PI * 2, a1 = ((k + 1) / n0) * Math.PI * 2;
+        cells.push([[0, 0], pol(r0, a0), pol(r0, a1)]);
+        tcells.push([[0, 0]].concat(arc(r0, a0, a1)));
+      }
+      let r = r0, ring = 0;
+      while (r < maxR) {
+        const r2 = r + s;
+        const n = Math.max(n0, Math.round((Math.PI * 2 * (r + s / 2)) / s));
+        const twist = (t.twist || 0) * ring * 0.15;
+        for (let k = 0; k < n; k++) {
+          const a0 = (k / n) * Math.PI * 2 + twist, a1 = ((k + 1) / n) * Math.PI * 2 + twist;
+          cells.push([pol(r, a0), pol(r, a1), pol(r2, a1), pol(r2, a0)]);
+          tcells.push(arc(r, a0, a1).concat(arc(r2, a0, a1).reverse()));
+        }
+        r = r2; ring++;
+      }
+      return { cells, tcells, nominal: s * s };
+    }
+    if (t.type === 'voronoi' || t.type === 'sunflower') {
+      const D = root.d3 && root.d3.Delaunay;
+      if (!D) throw new Error('d3-delaunay not loaded');
+      const A = Math.abs(area(region));
+      const nominal = 0.866 * s * s;
+      const N = Math.max(4, Math.round(A / nominal));
+      let pts = [];
+      if (t.type === 'sunflower') {
+        const golden = Math.PI * (3 - Math.sqrt(5));
+        const rmax = Math.hypot(b.w, b.h) / 2;
+        const c = Math.sqrt(nominal / Math.PI) * 1.0;
+        for (let i = 0; ; i++) {
+          const r = c * Math.sqrt(i + 0.5);
+          if (r > rmax + s) break;
+          const a = i * golden;
+          const p = [r * Math.cos(a), r * Math.sin(a)];
+          if (inside(region, p)) pts.push(p);
+        }
+      } else {
+        const R = rng(t.seed || 1);
+        let guard = 0;
+        while (pts.length < N && guard++ < N * 200) {
+          const p = [b.x0 + R() * b.w, b.y0 + R() * b.h];
+          if (inside(region, p)) pts.push(p);
+        }
+      }
+      const box = [ob.x0 - 2, ob.y0 - 2, ob.x1 + 2, ob.y1 + 2];
+      const iters = t.type === 'sunflower' ? 0 : Math.round(t.relax ?? 3);
+      let polys = null;
+      for (let it = 0; it <= iters; it++) {
+        const vor = D.from(pts).voronoi(box);
+        polys = pts.map((_, i) => {
+          const c = vor.cellPolygon(i); if (!c) return null;
+          return ccw(c.slice(0, -1).map(v => [v[0], v[1]]));
+        });
+        if (it < iters) pts = polys.map((pl, i) => { if (!pl) return pts[i]; const q = clipConvex(pl, region); return q.length > 2 ? centroid(q) : pts[i]; });
+      }
+      return { cells: polys.filter(Boolean), nominal };
+    }
+    throw new Error('unknown tessellation ' + t.type);
+  }
+
+  // ---------- surface ----------
+  function surfaceAt(sf, shape, x, y, R) {
+    const u = x / (shape.w / 2), v = y / (shape.h / 2);
+    const r = Math.min(1.2, Math.hypot(u, v));
+    const clamp = z => Math.max(0, Math.min(1, z));
+    const ang = (sf.angle || 0) * Math.PI / 180;
+    const f = sf.freq || 2;
+    switch (sf.type) {
+      case 'flat': return 0.5;
+      case 'dome': return clamp(1 - r * r);
+      case 'bowl': return clamp(r * r);
+      case 'cone': return clamp(1 - r);
+      case 'ring': { const r0 = sf.ring ?? 0.6; return clamp(Math.exp(-Math.pow((r - r0) / 0.28, 2))); }
+      case 'wave': return 0.5 + 0.5 * Math.sin(Math.PI * f * (u * Math.cos(ang) + v * Math.sin(ang)));
+      case 'ripple': return 0.5 + 0.5 * Math.cos(Math.PI * f * r);
+      case 'tilt': return clamp(0.5 + 0.5 * (u * Math.cos(ang) + v * Math.sin(ang)));
+      case 'noise': return valueNoise(u * f, v * f, sf.seed || 1);
+    }
+    return 0.5;
+  }
+  function valueNoise(x, y, seed) {
+    const h = (i, j) => { let n = i * 374761393 + j * 668265263 + seed * 2147483647; n = (n ^ (n >> 13)) * 1274126177; return ((n ^ (n >> 16)) >>> 0) / 4294967296; };
+    const sm = t => t * t * (3 - 2 * t);
+    let tot = 0, amp = 1, norm = 0;
+    for (let o = 0; o < 3; o++) {
+      const xi = Math.floor(x), yi = Math.floor(y), xf = sm(x - xi), yf = sm(y - yi);
+      const a = h(xi, yi), b = h(xi + 1, yi), c = h(xi, yi + 1), d = h(xi + 1, yi + 1);
+      tot += amp * (a + (b - a) * xf + (c - a) * yf + (a - b - c + d) * xf * yf);
+      norm += amp; amp *= 0.5; x *= 2; y *= 2;
+    }
+    return tot / norm;
+  }
+
+  // ---------- movement field ----------
+  function fieldAt(points, x, y) {
+    let vx = 0, vy = 0;
+    for (const p of points) {
+      const dx = x - p.x, dy = y - p.y, r = Math.hypot(dx, dy);
+      const R = p.radius, F = Math.max(1, p.fade);
+      let w = r <= R ? 1 : r >= R + F ? 0 : 1 - smooth((r - R) / F);
+      if (w <= 0) continue;
+      let ux = 0, uy = 0;
+      const rx = r > 1e-6 ? dx / r : 0, ry = r > 1e-6 ? dy / r : 0;
+      if (p.type === 'vortex') {
+        const phi = (p.opening || 0) * Math.PI / 2;
+        const tx = -ry, ty = rx;
+        ux = tx * Math.cos(phi) + rx * Math.sin(phi);
+        uy = ty * Math.cos(phi) + ry * Math.sin(phi);
+        // soften the singular centre
+        const core = Math.min(1, r / 12); w *= core;
+      } else if (p.type === 'magnet') {
+        ux = -rx; uy = -ry; const core = Math.min(1, r / 12); w *= core;
+      } else if (p.type === 'current') {
+        const a = (p.angle || 0) * Math.PI / 180; ux = Math.cos(a); uy = Math.sin(a);
+      }
+      vx += ux * w * p.strength; vy += uy * w * p.strength;
+    }
+    const m = Math.hypot(vx, vy);
+    if (m > 1.5) { vx *= 1.5 / m; vy *= 1.5 / m; }
+    return [vx, vy];
+  }
+  // per-point additions to curvature and spiral, weighted like the field
+  function modsAt(points, x, y) {
+    let curve = 0, spiral = 0;
+    for (const p of points) {
+      if (!p.curve && !p.spiral) continue;
+      const r = Math.hypot(x - p.x, y - p.y), R = p.radius, F = Math.max(1, p.fade);
+      const w = r <= R ? 1 : r >= R + F ? 0 : 1 - smooth((r - R) / F);
+      curve += (p.curve || 0) * w; spiral += (p.spiral || 0) * w;
+    }
+    return { curve, spiral };
+  }
+  function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
+
+  // ---------- main build ----------
+  function build(st, noHang) {
+    const warnings = [];
+    let fr = st.frame;
+    const pr = st.print;
+    // Hanging must never change how the pieces look. So first build the panel without keyholes, and only
+    // place keyholes under pieces whose unchanged shape has room for the hidden boss.
+    let baseShape = null;
+    if (noHang) fr = Object.assign({}, fr, { hang: Object.assign({}, fr.hang || {}, { on: false }) });
+    else if (!fr.hang || fr.hang.on !== false) {
+      const base = build(st, true);
+      baseShape = new Map(base.pieces.map(c => [c.id, { collar: c.collar, layers: c.layers || [], z0: c.z0, zApex: c.zApex }]));
+    }
+    const outer = makeShape(st.shape);
+    const rim = Math.max(st.shape.rim, fr.rib / 2 + 0.5);
+    const region = inset(outer, rim);
+    if (!region) throw new Error('המסגרת החיצונית רחבה מדי ביחס לגודל');
+    const tz = tessellate(st.tess, region, outer);
+    const minEdge = Math.max(1.2, fr.rib * 0.6);
+    const q3 = p => p.map(v => [Math.round(v[0] * 1000) / 1000, Math.round(v[1] * 1000) / 1000]);
+    const cells = [], rimCells = [];
+    for (let ci = 0; ci < tz.cells.length; ci++) {
+      const raw = ccw(tz.cells[ci]);
+      let tp = clipConvex(tz.tcells ? ccw(tz.tcells[ci]) : raw, outer);
+      if (!tp || tp.length < 3 || Math.abs(area(tp)) < 0.5) continue;
+      tp = q3(ccw(tp));
+      let p = clipConvex(raw, region);
+      if (p && p.length >= 3) p = ccw(p);
+      if (p && p.length >= 3 && area(p) >= 2) {
+        p = simplify(p, minEdge);
+        if (p.length >= 3 && area(p) > 1) { cells.push({ poly: p, area: area(p), tpoly: tp }); continue; }
+      }
+      rimCells.push({ tpoly: tp, c: centroid(tp) });
+    }
+    const minFrac = st.tess.minFrac ?? 0.35;
+    const t = fr.t, half = fr.rib / 2, clr = fr.clr, gap = fr.gap;
+    const jointHalf = Math.max(half, (fr.joint ?? 9) / 2);
+    let maxExt = 0;
+    cells.forEach((c, i) => {
+      c.id = i; c.c = centroid(c.poly);
+      c.bb = bbox(c.poly); c.tbb = bbox(c.tpoly); maxExt = Math.max(maxExt, c.tbb.w, c.tbb.h);
+      c.kind = c.area >= minFrac * tz.nominal ? 'piece' : 'blank';
+    });
+    rimCells.forEach(r => r.tbb = bbox(r.tpoly));
+
+    // ---- frame tiles made of whole cells, sized for the bed ----
+    const uw = pr.bedW - 2 * pr.margin, uh = pr.bedH - 2 * pr.margin;
+    const ob = bbox(outer);
+    const fitsBed = (w, h) => (w <= uw + 0.3 && h <= uh + 0.3) || (w <= uh + 0.3 && h <= uw + 0.3);
+    const allT = cells.concat(rimCells);
+    function tryGrid(nx, ny) {
+      const sx = ob.w / nx, sy = ob.h / ny;
+      const tileOf = (x, y) => Math.min(ny - 1, Math.max(0, Math.floor((ob.y1 - y) / sy))) * nx + Math.min(nx - 1, Math.max(0, Math.floor((x - ob.x0) / sx)));
+      const bbs = Array.from({ length: nx * ny }, () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }));
+      for (const c of allT) {
+        const cc = c.c || centroid(c.tpoly);
+        c._t = tileOf(cc[0], cc[1]);
+        const B = bbs[c._t]; B.x0 = Math.min(B.x0, c.tbb.x0); B.y0 = Math.min(B.y0, c.tbb.y0); B.x1 = Math.max(B.x1, c.tbb.x1); B.y1 = Math.max(B.y1, c.tbb.y1);
+      }
+      let okX = true, okY = true;
+      for (const B of bbs) if (B.x1 > B.x0) {
+        const w = Math.min(ob.w, B.x1 - B.x0 + 3), h = Math.min(ob.h, B.y1 - B.y0 + 3); // +dovetail allowance
+        if (!fitsBed(w, h)) { if (w > Math.max(uw, uh) || (w > uw && h > uh && w >= h)) okX = false; else okY = false; if (w <= uw && h > uh) okY = false; if (h <= uh && w > uw) okX = false; }
+      }
+      return { okX, okY };
+    }
+    let best = null;
+    for (const [tw, th] of [[uw, uh], [uh, uw]]) {
+      let nx = Math.max(1, Math.ceil(ob.w / tw)), ny = Math.max(1, Math.ceil(ob.h / th));
+      for (let guard = 0; guard < 12; guard++) {
+        const r = tryGrid(nx, ny);
+        if (r.okX && r.okY) break;
+        if (!r.okX) nx++; if (!r.okY) ny++;
+      }
+      if (!best || nx * ny < best.nx * best.ny) best = { nx, ny };
+    }
+    const P = best; tryGrid(P.nx, P.ny);
+    allT.forEach(c => c.tile = c._t);
+
+    // spatial lookup of tile polygons
+    const gsz = Math.max(maxExt, 5), tgrid = new Map(), gk = (i, j) => i + ',' + j;
+    allT.forEach(c => {
+      for (let i = Math.floor(c.tbb.x0 / gsz); i <= Math.floor(c.tbb.x1 / gsz); i++) for (let j = Math.floor(c.tbb.y0 / gsz); j <= Math.floor(c.tbb.y1 / gsz); j++) {
+        const k = gk(i, j); if (!tgrid.has(k)) tgrid.set(k, []); tgrid.get(k).push(c);
+      }
+    });
+    const cellAt = (x, y) => (tgrid.get(gk(Math.floor(x / gsz), Math.floor(y / gsz))) || []).find(c => x >= c.tbb.x0 && x <= c.tbb.x1 && y >= c.tbb.y0 && y <= c.tbb.y1 && inside(c.tpoly, [x, y]));
+
+    // seam edges get a wider rib to hold the puzzle joints
+    const seamFlags = c => {
+      const P2 = c.poly, out = [];
+      for (let i = 0; i < P2.length; i++) {
+        const a = P2[i], b = P2[(i + 1) % P2.length];
+        const L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+        const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L; // outward normal (CCW)
+        const m = [(a[0] + b[0]) / 2 + nx * 1.5, (a[1] + b[1]) / 2 + ny * 1.5];
+        const o = cellAt(m[0], m[1]);
+        out.push(o && o.tile !== c.tile ? o : null);
+      }
+      return out;
+    };
+    // outline -> opening in the frame, press-fit collar and visible base of the piece
+    function shapeCell(c, orig, concave) {
+      for (let attempt = 0; attempt < 5; attempt++) {
+        if (attempt) { c.poly = simplify(orig, minEdge * (1 + attempt * 1.2)); c.seam = seamFlags(c); }
+        if (c.poly.length < 3) return false;
+        const ds = c.seam.map(o => o ? jointHalf : half);
+        const opening = inset(c.poly, ds, concave);
+        const collar = opening && inset(opening, clr, concave);
+        const body = inset(c.poly, gap / 2, concave);
+        if (opening && collar && body && area(collar) > 12) {
+          c.opening = opening; c.collar = collar; c.body = body;
+          let step = 0; // horizontal step from collar to body, so the chamfer stays near 45°
+          for (let i = 0; i < collar.length; i++) step = Math.max(step, Math.hypot(collar[i][0] - body[i][0], collar[i][1] - body[i][1]));
+          c.chamfer = Math.max(0.6, step * 0.75);
+          return true;
+        }
+      }
+      return false;
+    }
+    cells.forEach(c => {
+      c.seam = seamFlags(c);
+      if (c.kind !== 'piece') return;
+      const orig = c.poly;
+      if (!shapeCell(c, orig)) { c.kind = 'blank'; c.poly = orig; c.seam = seamFlags(c); }
+      c.c = centroid(c.poly);
+    });
+    const pieces = cells.filter(c => c.kind === 'piece');
+    if (!pieces.length) throw new Error('אין אף תא שגדול מספיק לחלק. הגדל את גודל התא או את הפאנל.');
+
+    // ---- wall-hanging keyholes in the four corners ----
+    // The frame stays its normal thickness everywhere. In a corner cell the frame is solid (no opening) and
+    // carries the keyhole; the extra height the keyhole needs rises as a hidden boss inside the cell, and the
+    // piece above gets a matching pocket hollowed out of its underside, so from outside nothing looks different.
+    const hang = Object.assign({ on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 }, fr.hang || {});
+    // levels (z = 0 is the wall side): lip with the narrow slot, then the chamber for the screw head.
+    // Above the frame the chamber continues as a hollow inside the piece; a low ring (boss) on the frame
+    // around the chamber locates the piece, which presses onto it.
+    const lip = Math.min(2.0, t - 0.6), hd = lip + hang.headH + 0.4, zs = hd, tm = hd;
+    const bossH = 1.2, pocketLoTop = t + bossH + 0.2, pocketTop = hd + 0.25, pocketRoof = 0.8;
+    const mounts = [];
+    if (hang.on) {
+      const Rc = hang.head / 2 + 0.5, Rw = hang.head / 2 + 0.4, Rn = hang.shank / 2 + 0.3;
+      const bwall = 1.0, pwall = 0.9, pc = clr + 0.05, slot = hang.slot;
+      const circ = (c, r, n = 28) => Array.from({ length: n }, (_, i) => [c[0] + r * Math.cos(i / n * 2 * Math.PI), c[1] + r * Math.sin(i / n * 2 * Math.PI)]);
+      const capsule = (a, b, r) => ccw(convexHull(circ(a, r, 20).concat(circ(b, r, 20))));
+      // arms point out to the edges; each arm may be longer than the minimum slide so the screw rest points line up
+      const arms = (E, sx, sy, L1 = slot, L2 = slot) => [[E[0] + sx * L1, E[1]], [E[0], E[1] + sy * L2]];
+      const outline = (E, sx, sy, r0, r1, L1, L2) => { const [F1, F2] = arms(E, sx, sy, L1, L2); return [ccw(circ(E, r0)), capsule(E, F1, r1), capsule(E, F2, r1)]; };
+      const MAXEXTRA = 6;
+      const unionRing = parts => {
+        const u = root.polygonClipping.union(...parts.map(p => [p.concat([p[0]])]));
+        let best = u[0][0]; u.forEach(poly => { if (Math.abs(area(poly[0])) > Math.abs(area(best))) best = poly[0]; });
+        // drop near-duplicate and collinear points so the faces triangulate cleanly
+        let q = [];
+        for (const pt of best.slice(0, -1)) { const l = q[q.length - 1]; if (!l || Math.hypot(pt[0] - l[0], pt[1] - l[1]) > 0.05) q.push(pt); }
+        while (q.length > 3 && Math.hypot(q[0][0] - q[q.length - 1][0], q[0][1] - q[q.length - 1][1]) <= 0.05) q.pop();
+        for (let changed = true, guard = 0; changed && q.length > 3 && guard < 500; guard++) {
+          changed = false;
+          for (let i = 0; i < q.length; i++) {
+            const a = q[(i - 1 + q.length) % q.length], b = q[i], c = q[(i + 1) % q.length];
+            if (Math.abs((b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0])) < 1e-3 * Math.hypot(c[0] - a[0], c[1] - a[1])) { q.splice(i, 1); changed = true; break; }
+          }
+        }
+        return ccw(q);
+      };
+      const STEP = 1;
+      const corners = [[-1, 1], [1, 1], [-1, -1], [1, -1]];
+      // for each corner: the few cells nearest to it, each with the grid points where the whole keyhole
+      // (plus boss wall, fit clearance and the piece's own wall) fits inside the piece's footprint
+      const buildOpts = withPairs => corners.map(([sx, sy]) => {
+        const near = pieces.filter(c => sx * c.c[0] > 0 && sy * c.c[1] > 0).sort((a, b) => (sx * b.c[0] + sy * b.c[1]) - (sx * a.c[0] + sy * a.c[1])).slice(0, 30); // pieces in this quarter, outermost first
+        // single pieces first; then two neighbouring pieces joined into one, when one alone is too small
+        const cand = near.map(c => ({ members: [c], geo: c }));
+        if (withPairs) for (let i = 0; i < near.length; i++) for (let j = i + 1; j < near.length; j++) {
+          const A = near[i], B = near[j];
+          if (A.tile !== B.tile) continue;
+          try {
+            const PCl = root.polygonClipping;
+            const U = PCl.union([q3(A.tpoly).concat([q3(A.tpoly)[0]])], [q3(B.tpoly).concat([q3(B.tpoly)[0]])]);
+            if (U.length !== 1) continue; // not neighbours
+            const R = PCl.intersection(U, [region.concat([region[0]])]);
+            if (R.length !== 1 || R[0].length !== 1) continue;
+            const mp = simplify(ccw(R[0][0].slice(0, -1)), minEdge);
+            const geo = { poly: mp, tile: A.tile, kind: 'piece', tpoly: ccw(U[0][0].slice(0, -1)) };
+            geo.seam = seamFlags(geo);
+            if (!shapeCell(geo, mp, true)) continue;
+            geo.c = centroid(geo.poly); geo.tbb = bbox(geo.tpoly);
+            cand.push({ members: [A, B], geo });
+          } catch (e) { /* skip this pair */ }
+        }
+        return cand.map(({ members, geo: c }) => {
+          const B = baseShape && baseShape.get(c.id);
+          if (!B || B.zApex < pocketTop + pocketRoof + 0.5) return null;
+          // sections of the unchanged piece that must enclose each level of the hollow (+ its wall)
+          const sectionsUpTo = zTop => { const out = [B.collar]; let prevZ = B.z0; for (const l of B.layers) { if (prevZ >= zTop) break; out.push(l.poly); prevZ = l.z; } return out; };
+          // highest (smallest) sections first, so a misfit is found after few tests
+          // the region every one of those sections covers, as one outline per level (fast to test against)
+          const common = list => {
+            try {
+              const r = root.polygonClipping.intersection(...list.map(pl => [q3(pl).concat([q3(pl)[0]])]));
+              if (!r.length) return null;
+              let bestP = r[0]; r.forEach(pp => { if (Math.abs(area(pp[0])) > Math.abs(area(bestP[0]))) bestP = pp; });
+              return [bestP[0].slice(0, -1)];
+            } catch (e) { return list.slice().reverse(); }
+          };
+          const contLo = common(sectionsUpTo(pocketLoTop + 0.3)), contHi = common(sectionsUpTo(pocketTop + pocketRoof));
+          if (!contLo || !contHi) return null;
+          const gLo = bwall + pc + pwall, gHi = 0.25 + pwall;
+          const test = (q, conts) => conts.every(cp => inside(cp, q));
+          const circleOk = (P, r, conts) => { for (let a = 0; a < 16; a++) if (!test([P[0] + r * Math.cos(a * Math.PI / 8), P[1] + r * Math.sin(a * Math.PI / 8)], conts)) return false; return true; };
+          // arm k (1 = sideways, 2 = up/down) of length L fits at both levels of the hollow
+          const armOk = (E, k, L, from = 0) => {
+            const F = k === 1 ? [E[0] + sx * L, E[1]] : [E[0], E[1] + sy * L];
+            for (const [g, conts] of [[gHi, contHi], [gLo, contLo]]) {
+              const r = Rw + g;
+              if (!circleOk(F, r, conts)) return false;
+              for (let d = Math.max(2, from); d < L; d += 2) {
+                const mx = E[0] + (F[0] - E[0]) * d / L, my = E[1] + (F[1] - E[1]) * d / L;
+                for (const sg of [-1, 1]) if (!test(k === 1 ? [mx, my + sg * r] : [mx + sg * r, my], conts)) return false;
+              }
+            }
+            return true;
+          };
+          // the candidates are the screw rest points (arm tips): x of the sideways tip, y of the vertical tip
+          const off = [sx * slot / 3, sy * slot / 3];
+          const costE = E => Math.hypot(E[0] + off[0] - c.c[0], E[1] + off[1] - c.c[1]);
+          // quick limits: the highest section that must hold the chamber bounds where the keyhole can go
+          const top = bbox(contHi[0]), need = slot + 2 * (Rw + gHi);
+          if (top.w < need || top.h < need) return null;
+          const rE = Rc + gHi;
+          const bb = { x0: top.x0 + rE, x1: top.x1 - rE, y0: top.y0 + rE, y1: top.y1 - rE };
+          const pts = new Set(), rows = new Map(), cols = new Map(), best = new Map();
+          // entry points and rest points on a 1 mm grid
+          const ES = 1;
+          for (let ix = ES * Math.ceil(bb.x0 / ES); ix <= bb.x1; ix += ES) for (let iy = ES * Math.ceil(bb.y0 / ES); iy <= bb.y1; iy += ES) {
+            const E = [ix, iy];
+            if (!circleOk(E, Rc + gHi, contHi) || !circleOk(E, Rc + gLo, contLo)) continue;
+            let m1 = -1, m2 = -1;
+            for (let e = 0; e <= MAXEXTRA && armOk(E, 1, slot + e, e ? slot + e - 2 : 0); e++) m1 = e;
+            if (m1 < 0) continue;
+            for (let e = 0; e <= MAXEXTRA && armOk(E, 2, slot + e, e ? slot + e - 2 : 0); e++) m2 = e;
+            if (m2 < 0) continue;
+            const ce = costE(E);
+            for (let e1 = 0; e1 <= m1; e1++) for (let e2 = 0; e2 <= m2; e2++) {
+              const tx = ix + sx * (slot + e1), ty = iy + sy * (slot + e2), key = tx + ',' + ty;
+              const sc = ce + 0.3 * (e1 + e2); // prefer the shortest slide
+              const old = best.get(key);
+              if (!old || sc < old.sc) {
+                if (!old) { pts.add(key); if (!rows.has(ty)) rows.set(ty, []); rows.get(ty).push(tx); if (!cols.has(tx)) cols.set(tx, []); cols.get(tx).push(ty); }
+                best.set(key, { sc, E, L1: slot + e1, L2: slot + e2 });
+              }
+            }
+          }
+          const cost = (tx, ty) => best.get(tx + ',' + ty).sc;
+          return pts.size ? { c, members, pts, rows, cols, cost, best } : null;
+        }).filter(Boolean);
+      });
+      // choose one cell per corner and put the four keyholes on a true rectangle (aligned with each other),
+      // as close to the middle of their pieces as possible
+      // pick one piece per corner and a true rectangle through all four keyholes: as wide and tall as possible
+      // (the panel hangs steadier), with each keyhole as central as possible under its piece
+      const SPREAD = 1.5;
+      const search = opts => {
+        if (!opts.every(o => o.length)) return null;
+        // the four corners use pieces from four different quarters, so each corner's candidates can be pooled:
+        // every rest-point pair keeps the piece where it is cheapest
+        const pool = opts.map(o => {
+          const pts = new Map(), rows = new Map(), cols = new Map();
+          for (const op of o) for (const key of op.pts) {
+            const [x, y] = key.split(',').map(Number), sc = op.cost(x, y), old = pts.get(key);
+            if (!old) { if (!rows.has(y)) rows.set(y, []); rows.get(y).push(x); if (!cols.has(x)) cols.set(x, []); cols.get(x).push(y); }
+            if (!old || sc < old.sc) pts.set(key, { sc, op });
+          }
+          return { pts, rows, cols };
+        });
+        const [TL, TR, BL, BR] = pool;
+        let sol = null;
+        for (const [key, a] of TL.pts) {
+          const [xl, yt] = key.split(',').map(Number);
+          const rowR = TR.rows.get(yt); if (!rowR) continue;
+          const colB = BL.cols.get(xl); if (!colB) continue;
+          for (const xr of rowR) {
+            if (xr <= xl) continue;
+            const b = TR.pts.get(xr + ',' + yt);
+            for (const yb of colB) {
+              if (yb >= yt) continue;
+              const d = BR.pts.get(xr + ',' + yb); if (!d) continue;
+              const c3 = BL.pts.get(xl + ',' + yb);
+              const sc = a.sc + b.sc + c3.sc + d.sc - SPREAD * STEP * ((xr - xl) + (yt - yb));
+              if (!sol || sc < sol.score) sol = { score: sc, picks: [[a.op, xl, yt], [b.op, xr, yt], [c3.op, xl, yb], [d.op, xr, yb]] };
+            }
+          }
+        }
+        return sol;
+      };
+      // pieces are never joined: the keyholes move inward to pieces that are big enough to hide the boss
+      let opts = buildOpts(false), sol = search(opts);
+      let picks = sol ? sol.picks : null;
+      if (!picks) {
+        // no aligned set exists: place each corner on its own, as central as possible
+        const usedC = new Set();
+        picks = opts.map(o => {
+          for (const op of o) {
+            if (op.members.some(m => usedC.has(m))) continue;
+            let best = null;
+            for (const key of op.pts) { const [x, y] = key.split(',').map(Number); const s2 = op.cost(x, y); if (!best || s2 < best[0]) best = [s2, x, y]; }
+            if (best) { op.members.forEach(m => usedC.add(m)); return [op, best[1], best[2]]; }
+          }
+          return null;
+        });
+        if (picks.some(Boolean)) warnings.push({ kind: 'warn', text: 'אין בעיצוב הזה ארבעה חלקים שבהם החורים יוצאים מיושרים, אז כל חור מוקם בנפרד. הפאנל עדיין ייתלה ישר אם קודחים בדיוק לפי הצלבים במפה. כדי לקבל חורים מיושרים: מסגרת עבה יותר, ראש בורג דק יותר, או "גובה מינימלי" גבוה יותר.' });
+      }
+      picks.forEach((p, i) => {
+        if (!p) { warnings.push({ kind: 'warn', text: 'לא נמצא באחת הפינות חלק שיכול להסתיר את חור התלייה בלי לשנות את צורתו. מה שעוזר: תאים גדולים יותר, "גובה מינימלי" גבוה יותר, מסגרת עבה יותר, או ראש בורג דק או קטן יותר.' }); return; }
+        const [op, ix, iy] = p, [sx, sy] = corners[i];
+        let c = op.c;
+        if (op.members.length > 1) {
+          // join the two pieces: the first takes the joined outline, the second disappears
+          const [A, B] = op.members;
+          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, chamfer: c.chamfer, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
+          B.kind = 'merged'; B.mergedInto = A;
+          pieces.splice(pieces.indexOf(B), 1);
+          c = A;
+        }
+        const pick = op.best.get(ix + ',' + iy), E = pick.E, L1 = pick.L1, L2 = pick.L2;
+        const [F1, F2] = arms(E, sx, sy, L1, L2);
+        const boss = unionRing(outline(E, sx, sy, Rc + bwall, Rw + bwall, L1, L2));
+        c.mount = true;
+        c.pocketLo = unionRing(outline(E, sx, sy, Rc + bwall + pc, Rw + bwall + pc, L1, L2)); c.pocketLoTop = pocketLoTop; // fits over the boss ring
+        c.pocket = unionRing(outline(E, sx, sy, Rc + 0.25, Rw + 0.25, L1, L2)); c.pocketTop = pocketTop;                   // room for the screw head
+        mounts.push({ cells: [c], E, F1, F2, sx, sy, tile: c.tile, boss, C: ccw(circ(E, Rc)), N: [capsule(E, F1, Rn), capsule(E, F2, Rn)], W: [capsule(E, F1, Rw), capsule(E, F2, Rw)] });
+      });
+    }
+
+    // seams that pointed at a piece that was joined into another now point at the joined piece
+    cells.forEach(c => { if (c.seam) c.seam = c.seam.map(o => (o && o.mergedInto) || o); });
+    // dovetail joints across seam edges
+    const knobs = [];
+    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.05;
+    const trap = (m, u, n, w1, w2, h, back) => [
+      [m[0] - u[0] * w1 / 2 - n[0] * back, m[1] - u[1] * w1 / 2 - n[1] * back],
+      [m[0] + u[0] * w1 / 2 - n[0] * back, m[1] + u[1] * w1 / 2 - n[1] * back],
+      [m[0] + u[0] * w1 / 2, m[1] + u[1] * w1 / 2],
+      [m[0] + u[0] * w2 / 2 + n[0] * h, m[1] + u[1] * w2 / 2 + n[1] * h],
+      [m[0] - u[0] * w2 / 2 + n[0] * h, m[1] - u[1] * w2 / 2 + n[1] * h],
+      [m[0] - u[0] * w1 / 2, m[1] - u[1] * w1 / 2]
+    ];
+    const cellIdx = new Map(cells.map((c, i) => [c, i]));
+    const knobMargin = 1.0; // solid frame kept around a socket (mm)
+    let skippedKnobs = 0;
+    const openList = pieces.map(c => ({ ring: [q3(c.opening).concat([q3(c.opening)[0]])], bb: bbox(c.opening) }));
+    const knobFits = (m, u, nn) => {
+      const big = ccw(trap(m, u, nn, jw1 + 2 * (jc + knobMargin), jw2 + 2 * (jc + knobMargin), jh + jc + knobMargin, 1.2 + knobMargin));
+      const bb = bbox(big), r = [big.concat([big[0]])];
+      for (const op of openList) {
+        if (op.bb.x0 > bb.x1 || op.bb.x1 < bb.x0 || op.bb.y0 > bb.y1 || op.bb.y1 < bb.y0) continue;
+        let hit; try { hit = root.polygonClipping.intersection(r, op.ring); } catch (e) { return false; }
+        if (hit.some(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.01)) return false;
+      }
+      return true;
+    };
+    // the tab's neck must sit in the owner's frame and its head in the neighbour's, or it ends up loose
+    const anchored = (m, u, nn, own, tgt) => {
+      const kp = ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), r = [kp.concat([kp[0]])];
+      const ar = (G) => G.reduce((sum, poly) => sum + Math.abs(area(poly[0].slice(0, -1))), 0);
+      try {
+        const inOwn = ar(root.polygonClipping.intersection(r, [q3(own.tpoly).concat([q3(own.tpoly)[0]])]));
+        const inTgt = ar(root.polygonClipping.intersection(r, [q3(tgt.tpoly).concat([q3(tgt.tpoly)[0]])]));
+        return inOwn > 0.7 * jw1 * 1.2 && inTgt > 0.7 * jh * (jw1 + jw2) / 2;
+      } catch (e) { return false; }
+    };
+    cells.forEach(c => c.kind !== 'merged' && c.seam.forEach((o, i) => {
+      if (!o) return;
+      const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const nKnobs = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
+      if (!nKnobs) return;
+      // each shared edge is seen from both cells, and the two cells' outlines differ by rounding,
+      // so handle it only from the lower-numbered cell (two tabs on one edge cut each other into slivers)
+      if (cellIdx.get(c) > cellIdx.get(o)) return;
+      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
+      // alternate who owns the tab so tiles lock in both directions
+      const flip = ((Math.round(a[0] + b[0]) * 7 + Math.round(a[1] + b[1]) * 13) & 1) === 1;
+      for (let k = 0; k < nKnobs; k++) {
+        const own = (flip !== (k === 1)) ? c : o, tgt = own === c ? o : c;
+        const nn = own === c ? n : [-n[0], -n[1]];
+        // slide the tab along the edge until it and its socket keep solid frame all around them;
+        // near a cell corner a tab can run into a neighbour's opening and leave loose slivers
+        const f0 = nKnobs === 1 ? 0.5 : (k ? 0.72 : 0.28), span = nKnobs === 1 ? 0.3 : 0.16;
+        let placed = false;
+        for (const df of [0, -0.04, 0.04, -0.08, 0.08, -0.12, 0.12, -0.16, 0.16, -0.22, 0.22, -0.3, 0.3]) {
+          if (Math.abs(df) > span) continue;
+          const f = f0 + df;
+          const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+          // the tab must stay on this edge with room to spare at both ends
+          if (Math.min(f, 1 - f) * L < jw2 / 2 + jc + knobMargin) continue;
+          if (!own.tpoly || !tgt.tpoly || !anchored(m, u, nn, own, tgt) || !knobFits(m, u, nn)) continue;
+          knobs.push({ owner: own.tile, target: tgt.tile, poly: ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), socket: ccw(trap(m, u, nn, jw1 + 2 * jc, jw2 + 2 * jc, jh + jc, 0.6)) });
+          placed = true; break;
+        }
+        if (!placed) skippedKnobs++;
+      }
+    }));
+
+    const PC = root.polygonClipping;
+    if (!PC) throw new Error('polygon-clipping not loaded');
+    const ringOf = p => { const r = q3(p); r.push(r[0]); return r; };
+    const holesG = pieces.map(c => [ringOf(c.opening)]);
+    const tiles = []; let islandTiles = 0; const islandPolys = [];
+    for (let id = 0; id < P.nx * P.ny; id++) {
+      const mine = allT.filter(c => c.tile === id);
+      if (!mine.length) continue;
+      let g;
+      try {
+        // cells grow ~0.1 mm so rounding slits between neighbours close up
+        const grow = c => { const cc = centroid(c.tpoly), k = 1 + 0.1 / Math.max(2, Math.min(c.tbb.w, c.tbb.h) / 2); return c.tpoly.map(v => [cc[0] + (v[0] - cc[0]) * k, cc[1] + (v[1] - cc[1]) * k]); };
+        g = PC.union(...mine.map(c => [ringOf(grow(c))]), ...knobs.filter(k => k.owner === id).map(k => [ringOf(k.poly)]));
+        g = g.map(poly => [poly[0]]); // close hairline gaps between neighbouring cells
+        g = PC.intersection(g, [ringOf(outer)]);
+        const cut = knobs.filter(k => k.target === id).map(k => [ringOf(k.socket)]).concat(holesG);
+        g = PC.difference(g, ...cut);
+      } catch (e) { throw new Error('חישוב המסגרת נכשל: ' + e.message); }
+      {
+        // a tile must be one connected piece: drop loose slivers instead of printing them
+        const areas = g.map(poly => Math.abs(area(poly[0].slice(0, -1))));
+        const big = Math.max(0, ...areas);
+        const keep = g.filter((poly, i) => areas[i] > Math.max(4, big * 0.05));
+        if (g.some((poly, i) => areas[i] > 0.5 && !keep.includes(poly))) { islandTiles++; g.forEach((poly, i) => { if (!keep.includes(poly)) islandPolys.push({ tile: id, ring: poly[0], area: areas[i] }); }); }
+        g = keep;
+      }
+      if (!g.length) continue;
+      let slabs = null;
+      const myMounts = mounts.filter(mt => mt.tile === id);
+      if (myMounts.length) {
+        try {
+          const ring = p => [ringOf(p)];
+          // the corner cell's opening is filled: the frame is solid there and holds the keyhole
+          const FB = PC.union(g, ...myMounts.flatMap(mt => mt.cells.map(c => ring(c.opening))));
+          const boss = PC.union(...myMounts.map(mt => ring(mt.boss)));
+          const vN = PC.union(...myMounts.flatMap(mt => [ring(mt.C), ...mt.N.map(ring)]));
+          const vW = PC.union(...myMounts.flatMap(mt => [ring(mt.C), ...mt.W.map(ring)]));
+          const clean = G => G.filter(poly => Math.abs(area(poly[0].slice(0, -1))) > 1);
+          slabs = [
+            { z0: 0, z1: lip, g: clean(PC.difference(FB, vN)) },          // narrow slot: the screw shank slides here
+            { z0: lip, z1: t, g: clean(PC.difference(FB, vW)) },          // wide pocket: the screw head sits behind the lip
+            { z0: t, z1: t + bossH, g: clean(PC.difference(boss, vW)) }   // low ring hidden inside the piece above
+          ];
+          g = FB;
+        } catch (e) { warnings.push({ kind: 'warn', text: 'חישוב חור התלייה נכשל באריח אחד: ' + e.message }); slabs = null; }
+      }
+      const pts = []; g.forEach(poly => poly[0].forEach(q => pts.push(q)));
+      const iy = Math.floor(id / P.nx), ix = id % P.nx;
+      const tl = { id, label: `${iy + 1}-${ix + 1}`, geom: g, slabs, bb: bbox(pts), cells: mine.filter(c => c.poly).length, mounts: myMounts.length };
+      if (!fitsBed(tl.bb.w, tl.bb.h)) warnings.push({ kind: 'warn', text: `אריח מסגרת ${tl.label} גדול ממשטח ההדפסה (${tl.bb.w.toFixed(0)}×${tl.bb.h.toFixed(0)} מ"מ).` });
+      tiles.push(tl);
+    }
+    const usedTiles = tiles;
+
+    // heights, lean and piece shape
+    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0 }, st.piece || {});
+    // finer outline so the facets can melt into a round section higher up
+    if (ps.smooth > 0) pieces.forEach(c => {
+      const q = Math.max(1, Math.ceil(36 / c.body.length));
+      c.body = subdivide(c.body, q); c.collar = subdivide(c.collar, q);
+    });
+    let fmax = 0;
+    pieces.forEach(c => {
+      c.s = surfaceAt(sf, st.shape, c.c[0], c.c[1]);
+      c.f = fieldAt(mv.points, c.c[0], c.c[1]);
+      c.fm = Math.hypot(c.f[0], c.f[1]); fmax = Math.max(fmax, c.fm);
+      const md = modsAt(mv.points, c.c[0], c.c[1]);
+      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, truncate: ps.truncate, dome: ps.dome };
+    });
+    pieces.forEach(c => {
+      let h = sf.minH + sf.depth * c.s;
+      if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
+      c.zr = 0; c.h = h; c.skirt = 0;
+      c.hb = Math.max(2, h);
+      c.z0 = t + c.chamfer;
+      c.lean = [c.f[0] * mv.lean * c.hb, c.f[1] * mv.lean * c.hb];
+      c.scale = 1;
+      setApex(c);
+    });
+    const cellSize = Math.max(maxExt, 1);
+    const grid = new Map();
+    const key = (i, j) => i + ',' + j;
+    pieces.forEach(c => { const k = key(Math.floor(c.c[0] / cellSize), Math.floor(c.c[1] / cellSize)); if (!grid.has(k)) grid.set(k, []); grid.get(k).push(c); });
+    pieces.forEach(c => {
+      const gi = Math.floor(c.c[0] / cellSize), gj = Math.floor(c.c[1] / cellSize);
+      c.nb = [];
+      for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) (grid.get(key(gi + i, gj + j)) || []).forEach(o => { if (o !== c) c.nb.push(o); });
+    });
+    const maxOv = (pr.overhang ?? 45) * Math.PI / 180;
+    for (let pass = 0; pass < 3; pass++) {
+      for (const c of pieces) {
+        let guard = 0;
+        while (guard++ < 12 && (overhangBad(c, maxOv) || collides(c, gap))) {
+          c.scale = Math.max(0, c.scale - 0.1);
+          if (c.scale === 0 && c.shape.twist) c.shape.twist *= 0.5;
+          setApex(c);
+          if (c.scale === 0 && Math.abs(c.shape.twist) < 0.05) break;
+        }
+      }
+    }
+    const shortened = pieces.filter(c => c.scale < 0.999).length;
+    if (islandTiles) warnings.push({ kind: 'warn', text: `ב-${islandTiles} אריחים נשארו שאריות מסגרת קטנות ומנותקות, והן הוסרו. כדאי להגדיל את "רוחב צלע בחיבור".` });
+    {
+      // every pair of touching tiles needs at least one tab, or it is held by glue only
+      const pairs = new Map();
+      cells.forEach(c => c.seam.forEach(o => { if (o && o.tile !== c.tile) pairs.set([c.tile, o.tile].sort().join('|'), 0); }));
+      knobs.forEach(k => { const key = [k.owner, k.target].sort().join('|'); if (pairs.has(key)) pairs.set(key, pairs.get(key) + 1); });
+      const bare = [...pairs.values()].filter(v => v === 0).length;
+      if (bare) warnings.push({ kind: 'warn', text: `${bare} חיבורים בין אריחים נשארו בלי מחבר זנב יונה, כי לא היה מקום בטוח לשים אותו. הגדל את "רוחב צלע בחיבור" או את גודל התא.` });
+    }
+    if (shortened) warnings.push({ kind: 'info', text: `${shortened} קודקודים קוצרו כדי שלא ייכנסו בשכנים או כדי שיודפסו בלי תמיכות. אפשר להוריד את ה"הטיה" או את ה"קימור", או להעלות את "גובה מינימלי".` });
+
+    // colours
+    const col = st.color, nb = col.bands.length;
+    const R = rng(col.seed || 1);
+    const vals = pieces.map(c => {
+      switch (col.by) {
+        case 'height': return c.zApex;
+        case 'gradient': { const a = (col.angle || 0) * Math.PI / 180; return c.c[0] * Math.cos(a) + c.c[1] * Math.sin(a); }
+        case 'radial': return Math.hypot(c.c[0] / st.shape.w, c.c[1] / st.shape.h);
+        case 'field': return c.fm;
+        case 'random': return R();
+      }
+      return 0;
+    });
+    let vmin = Math.min(...vals), vmax = Math.max(...vals);
+    if (col.reverse) vals.forEach((v, i) => vals[i] = vmax + vmin - v);
+    pieces.forEach((c, i) => {
+      let k = vmax - vmin < 1e-9 ? 0 : Math.floor(((vals[i] - vmin) / (vmax - vmin)) * nb);
+      if (col.by === 'random') k = Math.floor(vals[i] * nb);
+      c.band = Math.max(0, Math.min(nb - 1, k));
+    });
+
+    const rowH = Math.max(4, st.tess.size * 0.6);
+    pieces.sort((a, b) => {
+      const ra = Math.round(-a.c[1] / rowH), rb = Math.round(-b.c[1] / rowH);
+      return ra - rb || a.c[0] - b.c[0];
+    });
+    pieces.forEach((c, i) => c.num = i + 1);
+    const seams = { knobs: knobs.length };
+
+    // piece height check vs printer
+    const maxZ = Math.max(...pieces.map(c => c.zApex));
+    if (maxZ > (pr.bedZ || 220)) warnings.push({ kind: 'warn', text: 'יש חלקים גבוהים מגובה ההדפסה של המדפסת.' });
+    const big = pieces.filter(c => !fitsBed(c.fp.w + 2, c.fp.h + 2));
+    if (big.length) warnings.push({ kind: 'warn', text: `${big.length} חלקים רחבים ממשטח ההדפסה.` });
+
+    return {
+      outer, region, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank'), seams,
+      tiles: usedTiles, tileGrid: P, islandPolys, knobs, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominal,
+      bounds: ob
+    };
+  }
+
+  // curved, twisted loft: sections shrink toward the tip while their centre follows a bending,
+  // optionally spiralling path
+  function setApex(c) {
+    const sh = c.shape, N = sh.layers;
+    const lx = c.lean[0] * c.scale, ly = c.lean[1] * c.scale;
+    const e = sh.curve >= 0 ? 1 + 2.5 * sh.curve : 1 / (1 - 1.2 * sh.curve);
+    const cx = c.c[0], cy = c.c[1];
+    const at = (tt) => {
+      const a = sh.spiral * tt, ca = Math.cos(a), sa = Math.sin(a), f = Math.pow(tt, e);
+      return [cx + (lx * ca - ly * sa) * f, cy + (lx * sa + ly * ca) * f];
+    };
+    const rm = Math.sqrt(Math.max(1, area(c.body)) / Math.PI);
+    const trunc = Math.max(0, Math.min(1, sh.truncate || 0)), tEnd = 1 - 0.55 * trunc;
+    const blendAt = tt => sh.smooth > 0 ? Math.pow(Math.min(1, tt / Math.max(0.05, 1.05 - sh.smooth)), 1.5) : 0;
+    const section = (tt) => {
+      const ctr = at(tt), sc = Math.pow(1 - tt, sh.profile), r = sh.twist * tt, cr = Math.cos(r), sr = Math.sin(r), bl = blendAt(tt);
+      return { ctr, sc, poly: c.body.map(v => {
+        let dx = v[0] - cx, dy = v[1] - cy;
+        if (bl > 0) { const L = Math.hypot(dx, dy) || 1; dx += (dx / L * rm - dx) * bl; dy += (dy / L * rm - dy) * bl; }
+        dx *= sc; dy *= sc;
+        return [ctr[0] + dx * cr - dy * sr, ctr[1] + dx * sr + dy * cr];
+      }) };
+    };
+    c.layers = []; c.tipFlat = false;
+    if (trunc > 0) {
+      let last = null;
+      for (let k = 1; k <= N; k++) { const tt = tEnd * k / N; last = section(tt); c.layers.push({ z: c.z0 + c.hb * tt, poly: last.poly }); }
+      const zTop = c.z0 + c.hb * tEnd;
+      if ((sh.dome || 0) > 0) {
+        const rL = rm * last.sc, h = sh.dome * rL * 0.9, M = 6, ctr = last.ctr;
+        for (let j = 1; j < M; j++) {
+          const th = j / M * Math.PI / 2, k = Math.cos(th);
+          c.layers.push({ z: zTop + h * Math.sin(th), poly: last.poly.map(v => [ctr[0] + (v[0] - ctr[0]) * k, ctr[1] + (v[1] - ctr[1]) * k]) });
+        }
+        c.apex = ctr; c.zApex = zTop + h;
+      } else { c.apex = last.ctr; c.zApex = zTop; c.tipFlat = true; }
+    } else {
+      for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: c.z0 + c.hb * tt, poly: section(tt).poly }); }
+      c.apex = at(1); c.zApex = c.z0 + c.hb;
+    }
+    const pts = c.body.concat([c.apex]); c.layers.forEach(l => pts.push(...l.poly));
+    c.fp = bbox(pts);
+  }
+  function subdivide(p, q) {
+    if (q <= 1) return p;
+    const out = [];
+    for (let i = 0; i < p.length; i++) { const a = p[i], b = p[(i + 1) % p.length]; for (let k = 0; k < q; k++) out.push([a[0] + (b[0] - a[0]) * k / q, a[1] + (b[1] - a[1]) * k / q]); }
+    return out;
+  }
+  function convexHull(pts) {
+    const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  }
+  function rings3(c) {
+    const R = [c.body.map(v => [v[0], v[1], c.z0])];
+    c.layers.forEach(l => R.push(l.poly.map(v => [v[0], v[1], l.z])));
+    return R;
+  }
+  function triBad(p, q, r, lim) {
+    const e = [q[0] - p[0], q[1] - p[1], q[2] - p[2]], a = [r[0] - p[0], r[1] - p[1], r[2] - p[2]];
+    const n = [e[1] * a[2] - e[2] * a[1], e[2] * a[0] - e[0] * a[2], e[0] * a[1] - e[1] * a[0]];
+    const L = Math.hypot(n[0], n[1], n[2]);
+    return L > 1e-9 && n[2] / L < lim;
+  }
+  // the pocket under a corner piece (plus a wall around it) must stay inside the piece up to above its roof
+  function pocketFits(c) {
+    if (!c.pocketWall) return true;
+    const zNeed = c.pocketTop + 1.0;
+    if (c.zApex < zNeed + 0.5) return false;
+    if (!c.pocketWall.every(q => inside(c.body, q))) return false;
+    let prevZ = c.z0;
+    for (const l of (c.layers || [])) {
+      if (prevZ >= zNeed) break;
+      if (!c.pocketWall.every(q => inside(l.poly, q))) return false;
+      prevZ = l.z;
+    }
+    return true;
+  }
+  // side faces must not overhang more than maxOv from vertical
+  function overhangBad(c, maxOv) {
+    const lim = -Math.sin(maxOv), R = rings3(c), A = [c.apex[0], c.apex[1], c.zApex], n = c.body.length;
+    // the last few millimetres of a tip are too small to droop; only check sections wider than ~3 mm
+    let kmax = R.length - 1;
+    while (kmax > 1 && Math.sqrt(Math.abs(area(R[kmax].map(v => [v[0], v[1]])))) < 3) kmax--;
+    if (kmax < R.length - 1) R.length = kmax + 1;
+    for (let k = 0; k < R.length - 1; k++) for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      if (triBad(R[k][i], R[k][j], R[k + 1][j], lim) || triBad(R[k][i], R[k + 1][j], R[k + 1][i], lim)) return true;
+    }
+    if (kmax === c.layers.length && !c.tipFlat) { const T = R[R.length - 1]; for (let i = 0; i < n; i++) if (triBad(T[i], T[(i + 1) % n], A, lim)) return true; }
+    return false;
+  }
+  // approximate top of piece o above (x,y): highest section containing the point
+  function topAt(o, x, y) {
+    for (let k = o.layers.length - 1; k >= 0; k--) { const l = o.layers[k]; if (inside(l.poly, [x, y])) return l.z + o.hb / o.shape.layers; }
+    if (inside(o.body, [x, y])) return o.z0 + o.hb / o.shape.layers;
+    return -Infinity;
+  }
+  function collides(c, gap) {
+    const N = c.layers.length, samples = [[c.apex[0], c.apex[1], c.zApex]];
+    for (const k of [Math.floor(N / 3), Math.floor(2 * N / 3), N - 1]) { const l = c.layers[k]; if (l) l.poly.forEach(v => samples.push([v[0], v[1], l.z])); }
+    const clearance = Math.max(0.6, gap);
+    for (const s of samples) {
+      if (inside(c.body, s)) continue;
+      for (const o of c.nb) {
+        if (s[0] < o.fp.x0 || s[0] > o.fp.x1 || s[1] < o.fp.y0 || s[1] > o.fp.y1) continue;
+        const h = topAt(o, s[0], s[1]);
+        if (h > -Infinity && s[2] < h + clearance) return true;
+      }
+    }
+    return false;
+  }
+
+  // ---------- meshes ----------
+  // mesh = {v:[x,y,z,...], f:[a,b,c,...]}
+  function Mesh() { this.v = []; this.f = []; }
+  Mesh.prototype.pt = function (x, y, z) { this.v.push(x, y, z); return this.v.length / 3 - 1; };
+  Mesh.prototype.ring = function (poly, z) { return poly.map(p => this.pt(p[0], p[1], z)); };
+  Mesh.prototype.tri = function (a, b, c) { this.f.push(a, b, c); };
+  Mesh.prototype.quad = function (a, b, c, d) { this.f.push(a, b, c, a, c, d); };
+  Mesh.prototype.capUp = function (r) { for (let i = 1; i < r.length - 1; i++) this.tri(r[0], r[i], r[i + 1]); };
+  Mesh.prototype.capDown = function (r) { for (let i = 1; i < r.length - 1; i++) this.tri(r[0], r[i + 1], r[i]); };
+  Mesh.prototype.wall = function (lo, up) { const n = lo.length; for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.quad(lo[i], lo[j], up[j], up[i]); } };
+  Mesh.prototype.wallIn = function (lo, up) { const n = lo.length; for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.quad(lo[j], lo[i], up[i], up[j]); } };
+  Mesh.prototype.append = function (m, dx = 0, dy = 0, dz = 0) {
+    const o = this.v.length / 3;
+    for (let i = 0; i < m.v.length; i += 3) this.v.push(m.v[i] + dx, m.v[i + 1] + dy, m.v[i + 2] + dz);
+    for (const k of m.f) this.f.push(k + o);
+    return this;
+  };
+
+  // flat face from earcut over an outline with holes, made of existing vertex rings; up = normal +z
+  function capRings(m, rings, up) {
+    const flat = [], idx = [], holes = [];
+    rings.forEach((r, k) => { if (k) holes.push(idx.length); r.forEach(i => { idx.push(i); flat.push(m.v[i * 3], m.v[i * 3 + 1]); }); });
+    const tr = root.earcut(flat, holes.length ? holes : null, 2);
+    // earcut gives every triangle the same winding; decide the flip once from the largest triangle, so the
+    // zero-area slivers it makes along straight runs of points get the same winding as their neighbours
+    let flip = null, bestA = 0;
+    for (let i = 0; i < tr.length; i += 3) {
+      const a = idx[tr[i]], b = idx[tr[i + 1]], c = idx[tr[i + 2]];
+      const cr = (m.v[b * 3] - m.v[a * 3]) * (m.v[c * 3 + 1] - m.v[a * 3 + 1]) - (m.v[b * 3 + 1] - m.v[a * 3 + 1]) * (m.v[c * 3] - m.v[a * 3]);
+      if (Math.abs(cr) > bestA) { bestA = Math.abs(cr); flip = (cr > 0) !== up; }
+    }
+    for (let i = 0; i < tr.length; i += 3) {
+      const a = idx[tr[i]], b = idx[tr[i + 1]], c = idx[tr[i + 2]];
+      if (flip) m.tri(a, c, b); else m.tri(a, b, c);
+    }
+  }
+  // ---------- part numbers engraved under each piece ----------
+  // seven-segment digits: simple, bold and printable at 3 to 6 mm with a 0.4 mm nozzle
+  const SEG = { 0: 'abcdef', 1: 'bc', 2: 'abged', 3: 'abgcd', 4: 'fgbc', 5: 'afgcd', 6: 'afgedc', 7: 'abc', 8: 'abcdefg', 9: 'abcdfg' };
+  function textGlyphs(text, H, stroke) {
+    const W = 0.58 * H, gapX = 0.32 * H, s2 = stroke, rects = [];
+    String(text).split('').forEach((ch, k) => {
+      const x0 = k * (W + gapX), segs = SEG[ch] || '';
+      const R = (a, b, c, d) => rects.push([[x0 + a, b], [x0 + c, b], [x0 + c, d], [x0 + a, d], [x0 + a, b]]);
+      for (const g of segs) {
+        if (g === 'a') R(0, H - s2, W, H);
+        if (g === 'd') R(0, 0, W, s2);
+        if (g === 'g') R(0, (H - s2) / 2, W, (H + s2) / 2);
+        if (g === 'f') R(0, H / 2 - s2 / 2, s2, H);
+        if (g === 'b') R(W - s2, H / 2 - s2 / 2, W, H);
+        if (g === 'e') R(0, 0, s2, H / 2 + s2 / 2);
+        if (g === 'c') R(W - s2, 0, W, H / 2 + s2 / 2);
+      }
+    });
+    const n = String(text).length;
+    return { geom: rects.length ? root.polygonClipping.union(...rects.map(r => [r])) : [], w: n * W + (n - 1) * gapX, h: H };
+  }
+  // find a spot and size for the number on the underside; the text is mirrored so it reads right
+  // when the piece is turned over. avoid: a ring the text must stay clear of (the pocket of a corner piece)
+  function placeLabel(text, outline, avoid) {
+    const PCl = root.polygonClipping, stroke = 0.8;
+    const ringC = q => q.concat([q[0]]);
+    const cc = centroid(avoid ? outline : outline), bb = bbox(outline);
+    const centres = [cc];
+    for (let x = Math.ceil(bb.x0); x <= bb.x1; x += 1.5) for (let y = Math.ceil(bb.y0); y <= bb.y1; y += 1.5) centres.push([x, y]);
+    centres.sort((a, b) => Math.hypot(a[0] - cc[0], a[1] - cc[1]) - Math.hypot(b[0] - cc[0], b[1] - cc[1]));
+    for (let H = 6; H >= 2.5; H -= 0.5) {
+      const tg = textGlyphs(text, H, stroke), margin = H > 3 ? 1.0 : 0.6;
+      for (const c0 of centres.slice(0, avoid ? 400 : 60)) {
+        const x0 = c0[0] - tg.w / 2 - margin, x1 = c0[0] + tg.w / 2 + margin, y0 = c0[1] - tg.h / 2 - margin, y1 = c0[1] + tg.h / 2 + margin;
+        const box = [[x0, y0], [x1, y0], [x1, y1], [x0, y1]];
+        if (!box.every(q => inside(outline, q))) continue;
+        const boxG = [ringC(box)];
+        try {
+          if (PCl.difference(boxG, [ringC(outline)]).some(pp => Math.abs(area(pp[0].slice(0, -1))) > 1e-4)) continue;
+          if (avoid && PCl.intersection(boxG, [ringC(avoid)]).length) continue;
+        } catch (e) { continue; }
+        // mirror in x and move into place
+        return tg.geom.map(poly => poly.map(r => r.map(([x, y]) => [c0[0] + tg.w / 2 - x, c0[1] - tg.h / 2 + y])));
+      }
+    }
+    return null;
+  }
+  // flat underside at height z with recessed text: rings = outline index rings for the face (outer first)
+  function engraveFace(m, rings, glyphs, z, depth) {
+    const faceHoles = [];
+    // a few microns of deterministic jitter: digits share straight baselines, and points lined up across
+    // separate holes make the triangulation emit broken slivers
+    let k = 0;
+    const jt = r => r.map(([x, y]) => { k++; return [x + 0.004 * jit(k * 3.1), y + 0.004 * jit(k * 7.7 + 1)]; });
+    for (const poly of glyphs) {
+      const outer = ccw(jt(poly[0].slice(0, -1))), holes = poly.slice(1).map(r => ccw(jt(r.slice(0, -1))));
+      const o0 = m.ring(outer, z), o1 = m.ring(outer, z + depth);
+      m.wallIn(o0, o1); faceHoles.push(o0);
+      const tops = holes.map(h => { const h0 = m.ring(h, z), h1 = m.ring(h, z + depth); m.wall(h0, h1); capRings(m, [h0], false); return h1; });
+      capRings(m, [o1, ...tops], false);   // floor of the recess (faces down)
+    }
+    capRings(m, [...rings, ...faceHoles], false);
+  }
+  function pieceMesh(c, fr, opts) {
+    const m = new Mesh();
+    let prev;
+    if (c.mount && c.pocket) {
+      // corner piece: sits on the solid corner of the frame, hollowed underneath around the hidden boss
+      // nudge points that sit on a straight edge a hair inward, so the flat underside triangulates cleanly
+      const cc = centroid(c.collar), nudge = (ring, k0) => ring.map((p, i) => { const d = 0.002 * (1 + ((i * 7 + k0) % 5)); const dx = cc[0] - p[0], dy = cc[1] - p[1], L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * d, p[1] + dy / L * d]; });
+      const zb = fr.t, r0 = m.ring(nudge(c.collar, 0), zb);
+      prev = m.ring(c.body, c.z0); m.wall(r0, prev);   // same chamfer as every other piece
+      const l0 = m.ring(c.pocketLo, zb), l1 = m.ring(c.pocketLo, c.pocketLoTop);
+      const p0 = m.ring(c.pocket, c.pocketLoTop), p1 = m.ring(c.pocket, c.pocketTop);
+      const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, c.pocketLo) : null;
+      if (lab) engraveFace(m, [r0, l0], lab, zb, 0.4);
+      else capRings(m, [r0, l0], false);  // underside: between the outline and the recess for the boss ring
+      m.wallIn(l0, l1);                   // recess walls face inwards
+      capRings(m, [l1, p0], false);       // step down to the head chamber
+      m.wallIn(p0, p1);
+      capRings(m, [p1], false);           // chamber ceiling
+    } else {
+      const zr = c.zr || 0;
+      const r0 = m.ring(c.collar, zr), r1 = m.ring(c.collar, zr + fr.t);
+      prev = m.ring(c.body, c.z0);
+      const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, null) : null;
+      if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
+      m.wall(r0, r1); m.wall(r1, prev);
+    }
+    for (const l of (c.layers || [])) { const r = m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
+    if (c.tipFlat) { m.capUp(prev); return m; }
+    const a = m.pt(c.apex[0], c.apex[1], c.zApex);
+    for (let i = 0; i < prev.length; i++) m.tri(prev[i], prev[(i + 1) % prev.length], a);
+    return m;
+  }
+  function prism(m, poly, z0, z1) { const lo = m.ring(poly, z0), up = m.ring(poly, z1); m.capDown(lo); m.capUp(up); m.wall(lo, up); }
+  function annulus(m, out, inn, z0, z1) {
+    const ol = m.ring(out, z0), ou = m.ring(out, z1), il = m.ring(inn, z0), iu = m.ring(inn, z1);
+    const n = out.length;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      m.quad(ou[i], ou[j], iu[j], iu[i]);   // top
+      m.quad(ol[j], ol[i], il[i], il[j]);   // bottom
+    }
+    m.wall(ol, ou); m.wallIn(il, iu);
+  }
+  function jit(n) { const x = Math.sin(n * 12.9898 + 78.233) * 43758.5453; return x - Math.floor(x) - 0.5; }
+  // extrude a polygon-clipping MultiPolygon between z0 and z1 into one closed mesh
+  function extrudeGeom(m, geom, z0, z1) {
+    const ec = root.earcut;
+    for (const poly of geom) {
+      const rings = poly.map((r, k) => {
+        let q = [];
+        for (const p of r.slice(0, -1)) { const l = q[q.length - 1]; if (!l || Math.hypot(p[0] - l[0], p[1] - l[1]) > 0.005) q.push(p); }
+        while (q.length > 1 && Math.hypot(q[0][0] - q[q.length - 1][0], q[0][1] - q[q.length - 1][1]) <= 0.005) q.pop();
+        // drop collinear points: they make earcut emit sliver triangles and T-junctions
+        for (let guard = 0, changed = true; changed && q.length > 3 && guard < 1000; guard++) {
+          changed = false;
+          for (let i = 0; i < q.length; i++) {
+            const a = q[(i - 1 + q.length) % q.length], b = q[i], c = q[(i + 1) % q.length];
+            const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+            if (Math.abs(cr) < 1e-4 * Math.max(1e-9, Math.hypot(c[0] - a[0], c[1] - a[1]))) { q.splice(i, 1); changed = true; break; }
+          }
+        }
+        // outer ring CCW, holes CW
+        if ((k === 0) !== (area(q) > 0)) q = q.reverse();
+        // tiny deterministic jitter (≤2 µm) so edges of different rings are never exactly collinear,
+        // which otherwise makes earcut produce zero-area triangles and T-junctions
+        return q.map((p, i) => [p[0] + jit(k * 7919 + i) * 0.002, p[1] + jit(k * 104729 + i + 13) * 0.002]);
+      }).filter(q => q.length >= 3);
+      if (!rings.length) continue;
+      // split pinch points (a ring touching itself or another ring): move each copy 20 µm into
+      // the material along its own corner bisector so the copies separate cleanly
+      const seenPt = new Map();
+      rings.forEach(r => r.forEach(p => { const k = Math.round(p[0] * 2e3) + ',' + Math.round(p[1] * 2e3); seenPt.set(k, (seenPt.get(k) || 0) + 1); }));
+      rings.forEach((r, k) => {
+        const moved = r.map((p, i) => {
+          const key = Math.round(p[0] * 2e3) + ',' + Math.round(p[1] * 2e3);
+          if (seenPt.get(key) < 2) return p;
+          const a = r[(i - 1 + r.length) % r.length], b = r[(i + 1) % r.length];
+          const e1 = [p[0] - a[0], p[1] - a[1]], e2 = [b[0] - p[0], b[1] - p[1]];
+          const l1 = Math.hypot(e1[0], e1[1]) || 1, l2 = Math.hypot(e2[0], e2[1]) || 1;
+          let nx = -e1[1] / l1 - e2[1] / l2, ny = e1[0] / l1 + e2[0] / l2;
+          const L = Math.hypot(nx, ny);
+          if (L < 1e-6) { nx = -e1[1] / l1; ny = e1[0] / l1; } else { nx /= L; ny /= L; }
+          return [p[0] + nx * 0.02, p[1] + ny * 0.02];
+        });
+        rings[k] = moved;
+      });
+      const flat = [], holes = [], lo = [], up = [];
+      rings.forEach((r, k) => { if (k) holes.push(flat.length / 2); r.forEach(p => flat.push(p[0], p[1])); });
+      rings.forEach(r => { lo.push(m.ring(r, z0)); });
+      rings.forEach(r => { up.push(m.ring(r, z1)); });
+      const L = lo.flat(), U = up.flat();
+      const tri = ec(flat, holes, 2);
+      for (let i = 0; i < tri.length; i += 3) {
+        let a = tri[i], b = tri[i + 1], c = tri[i + 2];
+        const sa = (flat[2 * b] - flat[2 * a]) * (flat[2 * c + 1] - flat[2 * a + 1]) - (flat[2 * b + 1] - flat[2 * a + 1]) * (flat[2 * c] - flat[2 * a]);
+        if (sa < 0) { const t = b; b = c; c = t; }
+        m.tri(U[a], U[b], U[c]); m.tri(L[a], L[c], L[b]);
+      }
+      rings.forEach((r, k) => m.wall(lo[k], up[k]));
+    }
+    return m;
+  }
+  function tileMesh(tl, fr) {
+    if (!tl.slabs) return extrudeGeom(new Mesh(), tl.geom, 0, fr.t);
+    const m = new Mesh();
+    // stacked closed shells that overlap by 0.05 mm, so no two shells share a face; the slicer unions them
+    tl.slabs.forEach((sl, i) => { if (sl.g.length) extrudeGeom(m, sl.g, sl.z0, i < tl.slabs.length - 1 ? sl.z1 + 0.05 : sl.z1); });
+    return m;
+  }
+  function meshVolume(m) {
+    let s = 0; const v = m.v, f = m.f;
+    for (let i = 0; i < f.length; i += 3) {
+      const a = f[i] * 3, b = f[i + 1] * 3, c = f[i + 2] * 3;
+      s += v[a] * (v[b + 1] * v[c + 2] - v[b + 2] * v[c + 1]) - v[a + 1] * (v[b] * v[c + 2] - v[b + 2] * v[c]) + v[a + 2] * (v[b] * v[c + 1] - v[b + 1] * v[c]);
+    }
+    return s / 6;
+  }
+  // every edge used exactly twice, in opposite directions
+  function checkManifold(m) {
+    const E = new Map(); const f = m.f;
+    for (let i = 0; i < f.length; i += 3) for (let k = 0; k < 3; k++) {
+      const a = f[i + k], b = f[i + (k + 1) % 3];
+      const key = a + '_' + b; E.set(key, (E.get(key) || 0) + 1);
+    }
+    let bad = 0;
+    for (const [k, n] of E) { const [a, b] = k.split('_'); if (n !== 1 || E.get(b + '_' + a) !== 1) bad++; }
+    return bad;
+  }
+
+  // ---------- plate packing (shelf) ----------
+  function packPlates(items, pr) {
+    // items: {w,h,ref}; returns plates [{items:[{x,y,ref}]}]
+    const W = pr.bedW - 2 * pr.margin, H = pr.bedH - 2 * pr.margin, g = pr.spacing;
+    const sorted = items.slice().sort((a, b) => b.h - a.h || b.w - a.w);
+    const plates = [];
+    let cur = null, x = 0, y = 0, rowH = 0;
+    const newPlate = () => { cur = { items: [] }; plates.push(cur); x = 0; y = 0; rowH = 0; };
+    newPlate();
+    for (const it of sorted) {
+      let w = it.w, h = it.h, rot = false;
+      if (w > W && h <= W && w <= H) { [w, h] = [h, w]; rot = true; }
+      if (x + w > W) { x = 0; y += rowH + g; rowH = 0; }
+      if (y + h > H) { newPlate(); }
+      cur.items.push({ x: pr.margin + x, y: pr.margin + y, w, h, rot, ref: it.ref });
+      x += w + g; rowH = Math.max(rowH, h);
+    }
+    return plates.filter(p => p.items.length);
+  }
+
+  // ---------- file writers ----------
+  function stlBinary(m, name) {
+    const nt = m.f.length / 3;
+    const buf = new ArrayBuffer(84 + nt * 50), dv = new DataView(buf);
+    const hdr = ('relief ' + (name || '')).slice(0, 79);
+    for (let i = 0; i < hdr.length; i++) dv.setUint8(i, hdr.charCodeAt(i) & 0x7f);
+    dv.setUint32(80, nt, true);
+    let o = 84; const v = m.v, f = m.f;
+    for (let i = 0; i < f.length; i += 3) {
+      const a = f[i] * 3, b = f[i + 1] * 3, c = f[i + 2] * 3;
+      const ux = v[b] - v[a], uy = v[b + 1] - v[a + 1], uz = v[b + 2] - v[a + 2];
+      const wx = v[c] - v[a], wy = v[c + 1] - v[a + 1], wz = v[c + 2] - v[a + 2];
+      let nx = uy * wz - uz * wy, ny = uz * wx - ux * wz, nz = ux * wy - uy * wx;
+      const L = Math.hypot(nx, ny, nz) || 1; nx /= L; ny /= L; nz /= L;
+      dv.setFloat32(o, nx, true); dv.setFloat32(o + 4, ny, true); dv.setFloat32(o + 8, nz, true); o += 12;
+      for (const k of [a, b, c]) { dv.setFloat32(o, v[k], true); dv.setFloat32(o + 4, v[k + 1], true); dv.setFloat32(o + 8, v[k + 2], true); o += 12; }
+      dv.setUint16(o, 0, true); o += 2;
+    }
+    return buf;
+  }
+  const esc = s => String(s).replace(/[<>&"]/g, ch => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;', '"': '&quot;' }[ch]));
+  // objects: [{name, mesh, x, y}] mesh in local coords (min corner at 0,0)
+  function model3mf(objects, colorHex) {
+    const parts = [];
+    parts.push('<?xml version="1.0" encoding="UTF-8"?>\n<model unit="millimeter" xml:lang="en-US" xmlns="http://schemas.microsoft.com/3dmanufacturing/core/2015/02">\n<metadata name="Application">Relief Wall Panel</metadata>\n<resources>\n');
+    if (colorHex) parts.push(`<basematerials id="1"><base name="filament" displaycolor="${colorHex.toUpperCase()}FF"/></basematerials>\n`);
+    objects.forEach((o, i) => {
+      const id = i + 2;
+      parts.push(`<object id="${id}" type="model" name="${esc(o.name)}"${colorHex ? ' pid="1" pindex="0"' : ''}><mesh><vertices>`);
+      const v = o.mesh.v; let s = '';
+      for (let k = 0; k < v.length; k += 3) s += `<vertex x="${v[k].toFixed(3)}" y="${v[k + 1].toFixed(3)}" z="${v[k + 2].toFixed(3)}"/>`;
+      parts.push(s, '</vertices><triangles>');
+      const f = o.mesh.f; s = '';
+      for (let k = 0; k < f.length; k += 3) s += `<triangle v1="${f[k]}" v2="${f[k + 1]}" v3="${f[k + 2]}"/>`;
+      parts.push(s, '</triangles></mesh></object>\n');
+    });
+    parts.push('</resources>\n<build>\n');
+    objects.forEach((o, i) => parts.push(`<item objectid="${i + 2}" transform="1 0 0 0 1 0 0 0 1 ${o.x.toFixed(3)} ${o.y.toFixed(3)} 0"/>\n`));
+    parts.push('</build>\n</model>\n');
+    return parts.join('');
+  }
+  const CONTENT_TYPES = '<?xml version="1.0" encoding="UTF-8"?>\n<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="model" ContentType="application/vnd.ms-package.3dmanufacturing-3dmodel+xml"/></Types>';
+  const RELS = '<?xml version="1.0" encoding="UTF-8"?>\n<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Target="/3D/3dmodel.model" Id="rel0" Type="http://schemas.microsoft.com/3dmanufacturing/2013/01/3dmodel"/></Relationships>';
+
+  // translate a mesh so its XY bbox min is at origin; optionally rotate 90°
+  function localize(m, rot) {
+    const out = new Mesh(); out.f = m.f.slice();
+    let x0 = Infinity, y0 = Infinity;
+    const v = m.v.slice();
+    if (rot) for (let i = 0; i < v.length; i += 3) { const x = v[i]; v[i] = -v[i + 1]; v[i + 1] = x; }
+    let z0 = Infinity;
+    for (let i = 0; i < v.length; i += 3) { x0 = Math.min(x0, v[i]); y0 = Math.min(y0, v[i + 1]); z0 = Math.min(z0, v[i + 2]); }
+    for (let i = 0; i < v.length; i += 3) { v[i] -= x0; v[i + 1] -= y0; v[i + 2] -= z0; }
+    out.v = v; return out;
+  }
+
+  root.WallEngine = {
+    rng, area, centroid, ccw, bbox, inside, clipConvex, simplify, inset, isConvexCCW,
+    makeShape, tessellate, surfaceAt, fieldAt, modsAt, build, setApex, subdivide, convexHull,
+    Mesh, pieceMesh, tileMesh, placeLabel, textGlyphs, prism, annulus, meshVolume, checkManifold,
+    packPlates, extrudeGeom, stlBinary, model3mf, CONTENT_TYPES, RELS, localize, esc
+  };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* Print-kit builder: turns a built model into a ZIP of 3MF/STL plates + assembly maps. */
+(function (root) {
+  'use strict';
+  const E = root.WallEngine;
+
+  function fmt(n) { return (Math.round(n * 100) / 100).toString(); }
+  function polyPath(p, fy) { return 'M' + p.map(q => fmt(q[0]) + ' ' + fmt(fy(q[1]))).join('L') + 'Z'; }
+  function textColor(hex) {
+    const n = parseInt(hex.slice(1), 16), r = n >> 16, g = (n >> 8) & 255, b = n & 255;
+    return (0.299 * r + 0.587 * g + 0.114 * b) > 150 ? '#1b1f1d' : '#ffffff';
+  }
+
+  // full-size assembly map (1:1 in mm) — returns svg string; window = optional [x0,y0,w,h] in panel coords (y up)
+  function assemblySVG(model, st, win, pageLabel) {
+    const ob = model.bounds, pad = 8;
+    const fy = y => -y;
+    const vb = win ? [win[0], -(win[1] + win[3]), win[2], win[3]] : [ob.x0 - pad, -ob.y1 - pad - 14, ob.w + 2 * pad, ob.h + 2 * pad + 14];
+    const fs = Math.max(3, Math.min(9, Math.sqrt(model.nominal) * 0.28));
+    const out = [];
+    out.push(`<svg xmlns="http://www.w3.org/2000/svg" width="${fmt(vb[2])}mm" height="${fmt(vb[3])}mm" viewBox="${vb.map(fmt).join(' ')}" font-family="Arial, sans-serif">`);
+    out.push(`<rect x="${fmt(vb[0])}" y="${fmt(vb[1])}" width="${fmt(vb[2])}" height="${fmt(vb[3])}" fill="#fff"/>`);
+    out.push(`<path d="${polyPath(model.outer, fy)}" fill="#e9e9e6" stroke="#333" stroke-width="0.4"/>`);
+    model.cells.forEach(c => {
+      if (c.kind === 'blank') { out.push(`<path d="${polyPath(c.poly, fy)}" fill="#cfcfca" stroke="#999" stroke-width="0.2"/>`); return; }
+      const col = st.color.bands[c.band];
+      out.push(`<path d="${polyPath(c.opening, fy)}" fill="${col}" fill-opacity="0.85" stroke="#222" stroke-width="0.25"/>`);
+      const ax = c.apex[0] - c.c[0], ay = c.apex[1] - c.c[1], L = Math.hypot(ax, ay);
+      if (L > 1.5) {
+        const k = Math.min(1, (Math.sqrt(model.nominal) * 0.32) / L);
+        out.push(`<line x1="${fmt(c.c[0])}" y1="${fmt(fy(c.c[1]))}" x2="${fmt(c.c[0] + ax * k)}" y2="${fmt(fy(c.c[1] + ay * k))}" stroke="${textColor(col)}" stroke-opacity="0.45" stroke-width="0.5"/>`);
+      }
+      out.push(`<text x="${fmt(c.c[0])}" y="${fmt(fy(c.c[1]) + fs * 0.35)}" font-size="${fmt(fs)}" text-anchor="middle" font-weight="700" fill="${textColor(col)}">${c.num}</text>`);
+    });
+    // frame tile outlines (tiles follow whole cells and lock with dovetails)
+    if (model.tiles.length > 1) model.tiles.forEach(tl => {
+      tl.geom.forEach(poly => out.push(`<path d="${polyPath(poly[0].slice(0, -1), fy)}" fill="none" stroke="#0a58ca" stroke-width="0.7" stroke-dasharray="3 1.6"/>`));
+      const cx = (tl.bb.x0 + tl.bb.x1) / 2, cy = (tl.bb.y0 + tl.bb.y1) / 2;
+      out.push(`<text x="${fmt(cx)}" y="${fmt(fy(cy))}" font-size="${fmt(fs * 3)}" text-anchor="middle" fill="#0a58ca" fill-opacity="0.2" font-weight="700">${tl.label}</text>`);
+    });
+    (model.mounts || []).forEach(m => {
+      const r = ((st.frame.hang && st.frame.hang.head) || 8.5) / 2, P = q => `${fmt(q[0])} ${fmt(fy(q[1]))}`;
+      out.push(`<circle cx="${fmt(m.E[0])}" cy="${fmt(fy(m.E[1]))}" r="${fmt(r)}" fill="none" stroke="#c0392b" stroke-width="0.5" stroke-dasharray="1.2 0.8"/>`);
+      out.push(`<path d="M${P(m.F1)}L${P(m.E)}L${P(m.F2)}" fill="none" stroke="#c0392b" stroke-width="0.5"/>`);
+      [m.F1, m.F2].forEach(q => out.push(`<path d="M${fmt(q[0] - 1.6)} ${fmt(fy(q[1]))}h3.2M${fmt(q[0])} ${fmt(fy(q[1]) - 1.6)}v3.2" stroke="#c0392b" stroke-width="0.6"/>`));
+    });
+    if (!win) out.push(`<text x="${fmt(ob.x0)}" y="${fmt(-ob.y1 - 6)}" font-size="5" fill="#333">${E.esc(st.name || 'panel')} — ${model.pieces.length} pieces — 1:1 (mm)</text>`);
+    if (pageLabel) out.push(`<text x="${fmt(vb[0] + 3)}" y="${fmt(vb[1] + 6)}" font-size="4" fill="#0a58ca">${pageLabel}</text>`);
+    if (win) { // crop marks
+      out.push(`<rect x="${fmt(vb[0] + 0.5)}" y="${fmt(vb[1] + 0.5)}" width="${fmt(vb[2] - 1)}" height="${fmt(vb[3] - 1)}" fill="none" stroke="#999" stroke-width="0.2" stroke-dasharray="2 2"/>`);
+    }
+    out.push('</svg>');
+    return out.join('\n');
+  }
+
+  function plateSVG(plate, pr, title, colorHex) {
+    const W = pr.bedW, H = pr.bedH, fy = y => H - y;
+    const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W + 20}mm" height="${H + 30}mm" viewBox="-10 -16 ${W + 20} ${H + 30}" font-family="Arial, sans-serif">`];
+    out.push(`<rect x="-10" y="-16" width="${W + 20}" height="${H + 30}" fill="#fff"/>`);
+    out.push(`<rect x="0" y="0" width="${W}" height="${H}" fill="#f4f4f2" stroke="#333" stroke-width="0.6"/>`);
+    out.push(`<text x="0" y="-6" font-size="6" fill="#222">${E.esc(title)}</text>`);
+    out.push(`<text x="${W / 2}" y="${H + 9}" font-size="4.5" text-anchor="middle" fill="#666">front of printer</text>`);
+    plate.items.forEach(it => {
+      const fp = it.footprint; // polygon in bed coords
+      out.push(`<path d="${polyPath(fp, fy)}" fill="${colorHex}" fill-opacity="0.55" stroke="#222" stroke-width="0.3"/>`);
+      const c = E.centroid(fp);
+      const fs = Math.max(3.5, Math.min(9, Math.sqrt(Math.abs(E.area(fp))) * 0.3));
+      out.push(`<text x="${fmt(c[0])}" y="${fmt(fy(c[1]) + fs * 0.35)}" font-size="${fmt(fs)}" text-anchor="middle" font-weight="700" fill="#111">${E.esc(it.label)}</text>`);
+    });
+    out.push('</svg>');
+    return out.join('\n');
+  }
+
+  function zip3mf(JSZip, objects, colorHex) {
+    const z = new JSZip();
+    z.file('[Content_Types].xml', E.CONTENT_TYPES);
+    z.folder('_rels').file('.rels', E.RELS);
+    z.folder('3D').file('3dmodel.model', E.model3mf(objects, colorHex));
+    return z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
+  }
+
+  async function buildKit(model, st, JSZip, opts = {}) {
+    const pr = st.print, fr = st.frame;
+    const zip = new JSZip();
+    const safe = s => String(s).replace(/[^\w֐-׿-]+/g, '_').slice(0, 40) || 'panel';
+    const summary = { plates: [], tiles: [] };
+    const names = opts.colorNames || [];
+
+    // pieces by colour band
+    for (let b = 0; b < st.color.bands.length; b++) {
+      const group = model.pieces.filter(c => c.band === b);
+      if (!group.length) continue;
+      const hex = st.color.bands[b];
+      const items = group.map(c => {
+        const m = E.pieceMesh(c, fr, { label: st.print.engrave !== false }); // number recessed in the underside
+        return { w: c.fp.w, h: c.fp.h, ref: { c, m } };
+      });
+      const plates = E.packPlates(items, pr);
+      const folder = zip.folder(`pieces/colour-${b + 1}-${hex.slice(1)}`);
+      for (let p = 0; p < plates.length; p++) {
+        const objs = [], merged = new E.Mesh();
+        plates[p].items.forEach(it => {
+          const lm = E.localize(it.ref.m, it.rot);
+          objs.push({ name: `P${it.ref.c.num}`, mesh: lm, x: it.x, y: it.y });
+          merged.append(lm, it.x, it.y, 0);
+          // footprint polygon in bed coords (body outline + apex hull, approximated by body + apex bbox)
+          const src = it.ref.c.body.concat([it.ref.c.apex]); (it.ref.c.layers || []).forEach(l => src.push(...l.poly));
+          const rot = it.rot ? src.map(q => [-q[1], q[0]]) : src;
+          const bb = E.bbox(rot);
+          it.footprint = hull(rot).map(q => [q[0] - bb.x0 + it.x, q[1] - bb.y0 + it.y]);
+          it.label = String(it.ref.c.num);
+        });
+        const nm = `plate-${String(p + 1).padStart(2, '0')}`;
+        folder.file(nm + '.3mf', await zip3mf(JSZip, objs, hex));
+        folder.file(nm + '.stl', E.stlBinary(merged, nm));
+        folder.file(nm + '-map.svg', plateSVG(plates[p], pr, `Colour ${b + 1} (${hex}) — plate ${p + 1}/${plates.length} — ${plates[p].items.length} pieces`, hex));
+        summary.plates.push({ band: b, hex, n: plates[p].items.length, file: `${folder.root}${nm}` });
+      }
+    }
+    // frame tiles
+    const ff = zip.folder('frame');
+    const uw = pr.bedW - 2 * pr.margin, uh = pr.bedH - 2 * pr.margin;
+    for (const tl of model.tiles) {
+      const m = E.tileMesh(tl, fr);
+      // turn the tile 90° when it only fits the bed that way
+      const rot = !!tl.bb && (tl.bb.w > uw + 0.31 || tl.bb.h > uh + 0.31) && tl.bb.h <= uw + 0.31 && tl.bb.w <= uh + 0.31;
+      const lm = E.localize(m, rot);
+      const bb = E.bbox(chunk(lm.v));
+      const x = (pr.bedW - bb.w) / 2, y = (pr.bedH - bb.h) / 2;
+      ff.file(`frame-${tl.label}.3mf`, await zip3mf(JSZip, [{ name: `frame ${tl.label}`, mesh: lm, x, y }], fr.color || '#8a8d91'));
+      ff.file(`frame-${tl.label}.stl`, E.stlBinary(lm, 'frame ' + tl.label));
+      summary.tiles.push(tl.label);
+    }
+    // assembly maps
+    const am = zip.folder('assembly-map');
+    am.file('map-full-1to1.svg', assemblySVG(model, st));
+    const ob = model.bounds, pw = 190, ph = 277; // A4 printable area
+    const nx = Math.ceil((ob.w + 10) / pw), ny = Math.ceil((ob.h + 10) / ph);
+    if (nx * ny > 1) {
+      for (let j = 0; j < ny; j++) for (let i = 0; i < nx; i++) {
+        const win = [ob.x0 - 5 + i * pw, ob.y1 + 5 - (j + 1) * ph, pw, ph];
+        am.file(`a4-row${j + 1}-col${i + 1}.svg`, assemblySVG(model, st, win, `A4 ${j + 1}/${ny} - ${i + 1}/${nx}`));
+      }
+    }
+    zip.file('design.json', JSON.stringify(st, null, 2));
+    zip.file('README.txt', readme(model, st, summary, nx * ny));
+    return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), summary };
+  }
+
+  function chunk(v) { const o = []; for (let i = 0; i < v.length; i += 3) o.push([v[i], v[i + 1]]); return o; }
+  function hull(pts) {
+    const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+    const cr = (o, a, b) => (a[0] - o[0]) * (b[1] - o[1]) - (a[1] - o[1]) * (b[0] - o[0]);
+    const lo = [], up = [];
+    for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
+    for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
+    return lo.slice(0, -1).concat(up.slice(0, -1));
+  }
+
+  function readme(model, st, sm, pages) {
+    const L = [];
+    L.push(`ערכת הדפסה: ${st.name || 'פאנל'}`);
+    L.push(`גודל: ${st.shape.w}×${st.shape.h} מ"מ · ${model.pieces.length} חלקים · ${st.color.bands.length} צבעים · ${model.tiles.length} אריחי מסגרת`);
+    L.push('');
+    L.push('סדר עבודה מומלץ (Prusa MK4, PLA):');
+    L.push('1. קודם כול הדפס חלק אחד ואריח מסגרת אחד ובדוק שהחלק ננעץ בחוזקה. אם רופף, הקטן את "מרווח התאמה"; אם לא נכנס, הגדל.');
+    L.push('2. תיקיית frame: כל אריח הוא פלטה אחת. פתח את קובץ ה-3MF ב-PrusaSlicer. גובה שכבה 0.2, 2 דפנות, מילוי 15%.');
+    L.push('3. תיקיית pieces: תיקייה לכל צבע, ובה פלטות מוכנות. החלף גליל לפני כל צבע. הגדרות: 0.2 מ"מ, 2 דפנות, מילוי 10%-15%, בלי תמיכות.');
+    L.push('   לכל פלטה יש קובץ plate-XX-map.svg שמראה איזה מספר נמצא איפה על המשטח. ' + (st.print.engrave !== false ? 'בנוסף, המספר של כל חלק שקוע בתחתית שלו (0.4 מ"מ, הפוך כמו בראי כשמסתכלים מלמעלה, וקריא כשהופכים את החלק). חלקים קטנים מאוד נשארים בלי מספר.' : 'מומלץ להוריד חלקים מהמשטח לפי המפה ולסמן מספר בעיפרון בתחתית.'));
+    L.push('4. תיקיית assembly-map: מפת הרכבה בקנה מידה 1:1.' + (pages > 1 ? ` יש גם ${pages} דפי A4 להדפסה בגודל אמיתי (100%, בלי "התאם לעמוד"), להדבקה זה לצד זה.` : ''));
+    L.push('5. חבר את אריחי המסגרת (קווים כחולים מקווקווים במפה) בדבק מגע/CA על משטח שטוח, הנח את המפה מתחת ונעץ חלקים לפי המספרים.');
+    if ((model.mounts || []).length) {
+      L.push('6. תלייה: בארבע הפינות יש מאחור חור מנעול בצורת L (באדום במפה). ראש הבורג נכנס בעיגול, והפאנל מחליק למטה כך שהבורג נתפס בקצה הזרוע.');
+      L.push('   כל פינה עליונה עובדת בשני הכיוונים: הזרוע האנכית לתלייה לאורך, והזרוע לכיוון הצד לתלייה לרוחב. תמיד משתמשים בשני הברגים העליונים.');
+      L.push('   מיקום הברגים בקיר: הצלבים האדומים בקצות הזרועות שפונות למעלה. השאר את הבורג בולט מהקיר ' + (model.hangLevels.lip + st.frame.hang.headH).toFixed(1) + ' מ"מ עד קצה הראש (' + model.hangLevels.lip.toFixed(1) + ' מ"מ של גוף הבורג ועוד ראש בעובי ' + st.frame.hang.headH + ' מ"מ).');
+      L.push('   המסגרת נשארת בעובי רגיל והחלקים נראים בדיוק כמו בלי חורי תלייה. מתחת לחלק שמעל החור התא במסגרת מלא, ועליו טבעת נמוכה; בתחתית החלק יש חלל שנכנס על הטבעת וממשיך כמקום לראש הבורג. אריח עם חור תלייה בנוי מכמה שכבות גוף חופפות; PrusaSlicer מאחד אותן בפריסה.');
+    }
+    L.push('');
+    L.push('קבצים: ' + sm.plates.length + ' פלטות חלקים, ' + sm.tiles.length + ' אריחי מסגרת.');
+    L.push('design.json: ההגדרות של העיצוב. אפשר לטעון אותו בחזרה באפליקציה.');
+    return L.join('\r\n');
+  }
+
+  // small strip to dial in press-fit clearance: 5 square cells, 5 pieces with growing clearance.
+  // The taller the piece, the looser it is, so they can be told apart without labels.
+  async function buildFitTest(st, JSZip) {
+    const fr = st.frame, pr = st.print, half = fr.rib / 2;
+    const cs = 24, n = 5, rim = 5;
+    const clrs = [0.00, 0.025, 0.05, 0.10, 0.15]; // centred on the 0.05 mm that fit best on the MK4
+    const W = n * cs + 2 * rim, H = cs + 2 * rim;
+    const cells = [];
+    for (let i = 0; i < n; i++) {
+      const x0 = -W / 2 + rim + i * cs, y0 = -cs / 2;
+      cells.push([[x0, y0], [x0 + cs, y0], [x0 + cs, y0 + cs], [x0, y0 + cs]]);
+    }
+    const ring = p => p.concat([p[0]]);
+    const PCl = root.polygonClipping;
+    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.05;
+    // the seam between cell 3 and 4 gets the wide rib and a dovetail, exactly like the real frame
+    const openings = cells.map((c, i) => E.inset(c, [half, i === 2 ? jh2 : half, half, i === 3 ? jh2 : half]));
+    const xs = -W / 2 + rim + 3 * cs;
+    const left = [[-W / 2, -H / 2], [xs, -H / 2], [xs, H / 2], [-W / 2, H / 2]], right = [[xs, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs, H / 2]];
+    const w1 = fr.knobW ?? 5, w2 = w1 + 2.4, jh = Math.max(1.6, jh2 - 1.6);
+    const dt = (w1_, w2_, h_, back) => [[xs - back, -w1_ / 2], [xs - back, w1_ / 2], [xs, w1_ / 2], [xs + h_, w2_ / 2], [xs + h_, -w2_ / 2], [xs, -w1_ / 2]].reverse();
+    const holes = openings.map(o => [ring(o)]);
+    const gA = PCl.difference(PCl.union([ring(left)], [ring(E.ccw(dt(w1, w2, jh, 1.2)))]), ...holes);
+    const gB = PCl.difference([ring(right)], [ring(E.ccw(dt(w1 + 2 * jc, w2 + 2 * jc, jh + jc, 0.6)))], ...holes);
+    const mA = E.localize(E.extrudeGeom(new E.Mesh(), gA, 0, fr.t)), mB = E.localize(E.extrudeGeom(new E.Mesh(), gB, 0, fr.t));
+    const objs = [{ name: 'fit-frame-A', mesh: mA, x: 20, y: pr.bedH - H - 20 }, { name: 'fit-frame-B', mesh: mB, x: 20 + 3 * cs + rim + 15, y: pr.bedH - H - 20 }];
+    const merged = new E.Mesh().append(mA, objs[0].x, objs[0].y, 0).append(mB, objs[1].x, objs[1].y, 0);
+    const lines = [];
+    cells.forEach((c, i) => {
+      const op = openings[i], clr = clrs[i];
+      const chamfer = Math.max(0.6, (i === 2 || i === 3 ? jh2 : half) + clr - fr.gap / 2);
+      const pc = { collar: E.inset(op, clr), body: E.inset(c, fr.gap / 2), apex: E.centroid(c), z0: fr.t + chamfer, zApex: fr.t + chamfer + 6 + i * 3, layers: [] };
+      const m = E.localize(E.pieceMesh(pc, fr));
+      const x = (pr.bedW - W) / 2 + i * (cs + 6), y = 20;
+      objs.push({ name: `fit-${clr.toFixed(2)}mm`, mesh: m, x, y });
+      merged.append(m, x, y, 0);
+      lines.push(`חלק ${i + 1} (גובה ${(pc.zApex).toFixed(0)} מ"מ): מרווח ${clr.toFixed(2)} מ"מ לכל צד`);
+    });
+    const zip = new JSZip();
+    zip.file('fit-test.3mf', await zip3mf(JSZip, objs, fr.color || '#85898c'));
+    zip.file('fit-test.stl', E.stlBinary(merged, 'fit test'));
+    zip.file('README.txt', ['בדיקת התאמה ל-MK4', '', 'הדפס את הקובץ (פלטה אחת, בלי תמיכות), ונסה לנעוץ כל חלק בתא שלו.', 'בחר את החלק הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו באפליקציה תחת "מרווח התאמה".', 'המסגרת מודפסת בשני חלקים עם מחבר זנב יונה, כמו באריחים האמיתיים. אם המחבר רופף או צפוף, שנה את "מרווח במחבר".', '', ...lines].join('\r\n'));
+    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+  }
+
+  root.WallKit = { buildKit, buildFitTest, assemblySVG, plateSVG, hull };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script>
+/* Ready-made designs + filament palette */
+(function (root) {
+  const PRINT = { bedW: 250, bedH: 210, bedZ: 220, margin: 5, spacing: 3, overhang: 50 };
+  const FRAME = { t: 3, rib: 2.4, clr: 0.05, gap: 0.4, color: '#85898c', joint: 9, knobW: 5, jointClr: 0.05, hang: { on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 } };
+  const PIECE = { curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0 };
+  const P = (o) => JSON.parse(JSON.stringify(Object.assign({ print: PRINT, frame: FRAME, piece: PIECE }, o)));
+  const presets = [
+    {
+      key: 'test', label: 'פאנל בדיקה 15×15 (להתחיל מכאן)',
+      state: P({
+        name: 'פאנל בדיקה',
+        shape: { type: 'rect', w: 150, h: 150, rim: 6 },
+        tess: { type: 'hex', size: 34, relax: 3, seed: 1, twist: 0, center: 8, minFrac: 0.35 },
+        surface: { type: 'dome', minH: 8, depth: 14, freq: 2, angle: 0, seed: 1, ring: 0.6 },
+        move: { lean: 0.8, pull: 0, points: [{ type: 'vortex', x: 0, y: 0, strength: 1, radius: 50, fade: 80, opening: -0.2, angle: 0 }] },
+        color: { by: 'height', bands: ['#23409a', '#2f7fd8', '#f4f4f1'], angle: 0, seed: 1, reverse: false }
+      })
+    },
+    {
+      key: 'swirl', label: 'מערבולת וורונוי',
+      state: P({
+        name: 'מערבולת וורונוי',
+        piece: { curve: 0.8, twist: 20, spiral: 35, profile: 1.1, layers: 12 },
+        shape: { type: 'rect', w: 240, h: 240, rim: 6 },
+        tess: { type: 'voronoi', size: 40, relax: 3, seed: 7, twist: 0, center: 8, minFrac: 0.35 },
+        surface: { type: 'dome', minH: 10, depth: 24, freq: 2, angle: 0, seed: 3, ring: 0.6 },
+        move: { lean: 0.7, pull: 0.3, points: [{ type: 'vortex', x: 0, y: 0, strength: 1.1, radius: 90, fade: 140, opening: -0.35, angle: 0 }] },
+        color: { by: 'height', bands: ['#7c1626', '#cc1f2f', '#f2711c', '#f4f4f1'], angle: 0, seed: 1, reverse: false }
+      })
+    },
+    {
+      key: 'eye', label: 'עין גדולה (אליפסה)',
+      state: P({
+        name: 'עין',
+        piece: { curve: 0.4, twist: 0, spiral: 0, profile: 1, layers: 8 },
+        shape: { type: 'ellipse', w: 700, h: 520, rim: 8 },
+        tess: { type: 'hex', size: 30, relax: 3, seed: 1, twist: 0, center: 8, minFrac: 0.4 },
+        surface: { type: 'ring', minH: 6, depth: 34, freq: 2, angle: 0, seed: 1, ring: 0.55 },
+        move: { lean: 0.9, pull: 0, points: [{ type: 'magnet', x: 0, y: 0, strength: -1, radius: 120, fade: 260, opening: 0, angle: 0 }] },
+        color: { by: 'radial', bands: ['#1c1c1e', '#f4f4f1', '#1c1c1e', '#cc1f2f', '#cc1f2f'], angle: 0, seed: 1, reverse: false }
+      })
+    },
+    {
+      key: 'sun', label: 'חמנייה בנחושת',
+      state: P({
+        name: 'חמנייה',
+        piece: { curve: 0.6, twist: 0, spiral: 25, profile: 1.2, layers: 10 },
+        shape: { type: 'circle', w: 520, h: 520, rim: 8 },
+        tess: { type: 'sunflower', size: 30, relax: 0, seed: 1, twist: 0, center: 8, minFrac: 0.35 },
+        surface: { type: 'dome', minH: 8, depth: 30, freq: 2, angle: 0, seed: 1, ring: 0.6 },
+        move: { lean: 0.75, pull: 0.2, points: [{ type: 'magnet', x: 0, y: 0, strength: 1, radius: 40, fade: 260, opening: 0, angle: 0 }, { type: 'vortex', x: 0, y: 0, strength: 0.5, radius: 120, fade: 200, opening: 0, angle: 0 }] },
+        color: { by: 'radial', bands: ['#efe6d2', '#f4a383', '#b5653b', '#7a4b2a'], angle: 0, seed: 1, reverse: false }
+      })
+    },
+    {
+      key: 'wave', label: 'גל אלכסוני',
+      state: P({
+        name: 'גל אלכסוני',
+        shape: { type: 'ellipse', w: 600, h: 400, rim: 8 },
+        tess: { type: 'hex', size: 30, relax: 3, seed: 1, twist: 0, center: 8, minFrac: 0.4 },
+        surface: { type: 'wave', minH: 6, depth: 18, freq: 3, angle: 35, seed: 1, ring: 0.6 },
+        move: { lean: 0.9, pull: 0, points: [{ type: 'current', x: 0, y: 0, strength: 1, radius: 400, fade: 200, opening: 0, angle: 35 }] },
+        color: { by: 'gradient', bands: ['#23409a', '#f4f4f1', '#1aa6a0', '#f4f4f1', '#23409a', '#7cc4e8'], angle: 35, seed: 1, reverse: false }
+      })
+    },
+    {
+      key: 'hex', label: 'משושה טורקיז',
+      state: P({
+        name: 'משושה',
+        shape: { type: 'hexagon', w: 480, h: 420, rim: 8 },
+        tess: { type: 'triangle', size: 28, relax: 3, seed: 1, twist: 0, center: 8, minFrac: 0.4 },
+        surface: { type: 'bowl', minH: 8, depth: 22, freq: 2, angle: 0, seed: 1, ring: 0.6 },
+        move: { lean: 0.7, pull: 0, points: [{ type: 'vortex', x: 0, y: 0, strength: 1, radius: 100, fade: 180, opening: 0.3, angle: 0 }] },
+        color: { by: 'radial', bands: ['#b9bbb8', '#f4a383', '#1aa6a0'], angle: 0, seed: 1, reverse: false }
+      })
+    },
+    {
+      key: 'radial', label: 'פרח רדיאלי',
+      state: P({
+        name: 'פרח רדיאלי',
+        piece: { curve: 0.5, twist: 45, spiral: 0, profile: 0.8, layers: 20, smooth: 0.6, truncate: 0.35, dome: 0.8 },
+        shape: { type: 'circle', w: 360, h: 360, rim: 7 },
+        tess: { type: 'radial', size: 32, relax: 0, seed: 1, twist: 1, center: 8, minFrac: 0.35 },
+        surface: { type: 'cone', minH: 8, depth: 26, freq: 2, angle: 0, seed: 1, ring: 0.6 },
+        move: { lean: 1.0, pull: 0, points: [{ type: 'vortex', x: 0, y: 0, strength: 1, radius: 60, fade: 160, opening: 0.2, angle: 0 }] },
+        color: { by: 'radial', bands: ['#f4f4f1', '#3f8f4f', '#7b7f3a'], angle: 0, seed: 1, reverse: false }
+      })
+    }
+  ];
+  const palette = [
+    ['לבן', '#f4f4f1'], ['שמנת', '#efe6d2'], ['אפור בהיר', '#b9bbb8'], ['אפור', '#85898c'], ['אפור כהה', '#4d5154'], ['שחור', '#1c1c1e'],
+    ['צהוב', '#f6c81b'], ['חרדל', '#d9a21b'], ['כתום', '#f2711c'], ['אפרסק', '#f4a383'], ['אדום', '#cc1f2f'], ['בורדו', '#7c1626'],
+    ['ורוד', '#e86f9c'], ['סגול', '#5e4b8b'], ['כחול כהה', '#23409a'], ['כחול', '#2f7fd8'], ['תכלת', '#7cc4e8'], ['טורקיז', '#1aa6a0'],
+    ['ירוק', '#3f8f4f'], ['זית', '#7b7f3a'], ['חום', '#7a4b2a'], ['נחושת', '#b5653b'], ['זהב', '#c9a24a'], ['כסף', '#a8abad']
+  ];
+  root.WallPresets = { presets, palette, PRINT, FRAME };
+})(typeof window !== 'undefined' ? window : globalThis);
+
+</script>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const E = window.WallEngine, K = window.WallKit, PR = window.WallPresets;
+const $ = s => document.querySelector(s);
+const clone = o => JSON.parse(JSON.stringify(o));
+
+// ---------- state, history, persistence ----------
+const LS_KEY = 'tavlit-design-v2';
+let state = loadLocal() || clone(PR.presets[1].state);
+let history = [JSON.stringify(state)], hIndex = 0;
+let model = null, buildError = null;
+let selPoint = 0, selBand = 0, addMode = null;
+const openSecs = new Set(['move']);
+
+function loadLocal() { try { const s = localStorage.getItem(LS_KEY); return s ? normalize(JSON.parse(s)) : null; } catch (e) { return null; } }
+function saveLocal() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
+function normalize(s) {
+  const base = clone(PR.presets[1].state);
+  for (const k of Object.keys(base)) if (typeof base[k] === 'object' && !Array.isArray(base[k])) s[k] = Object.assign({}, base[k], s[k] || {});
+  s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
+  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0 }, s.piece || {});
+  s.frame = Object.assign({ joint: 9, jointClr: 0.05, knobW: 5 }, s.frame);
+  // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
+  if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; if (s.frame.jointClr === 0.15) s.frame.jointClr = 0.05; s.fitCal = 1; }
+  s.frame.hang = Object.assign({ on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 }, s.frame.hang || {});
+  if (!Array.isArray(s.color.bands) || !s.color.bands.length) s.color.bands = base.color.bands;
+  s.name = s.name || 'עיצוב חדש';
+  return s;
+}
+function commit() {
+  const j = JSON.stringify(state);
+  if (j === history[hIndex]) return;
+  history = history.slice(0, hIndex + 1); history.push(j);
+  if (history.length > 80) history.shift();
+  hIndex = history.length - 1;
+  saveLocal(); updateUndo();
+}
+function updateUndo() { $('#undoBtn').disabled = hIndex <= 0; $('#redoBtn').disabled = hIndex >= history.length - 1; }
+function restore(i) { hIndex = i; state = normalize(JSON.parse(history[i])); selPoint = Math.min(selPoint, Math.max(0, state.move.points.length - 1)); selBand = Math.min(selBand, state.color.bands.length - 1); renderPanel(); schedule(); updateUndo(); saveLocal(); }
+
+const getP = (path) => path.split('.').reduce((o, k) => o?.[k], state);
+const setP = (path, v) => { const ks = path.split('.'); let o = state; for (let i = 0; i < ks.length - 1; i++) o = o[ks[i]]; o[ks[ks.length - 1]] = v; };
+
+// ---------- UI building blocks ----------
+function el(tag, attrs = {}, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k === 'class') e.className = v; else if (k.startsWith('on')) e.addEventListener(k.slice(2), v);
+    else if (v === true) e.setAttribute(k, ''); else if (v !== false && v != null) e.setAttribute(k, v);
+  }
+  for (const c of kids.flat()) if (c != null) e.append(c.nodeType ? c : document.createTextNode(c));
+  return e;
+}
+let uid = 0;
+function slider(label, hint, path, min, max, step, unit = '', opts = {}) {
+  const id = 'c_' + path.replace(/\./g, '_');
+  const v = getP(path);
+  const num = el('input', { id, type: 'number', min, max, step, value: v, inputmode: 'decimal' });
+  const rng = el('input', { type: 'range', min, max, step, value: v, 'aria-label': label });
+  const apply = (val, fin) => {
+    let x = parseFloat(val); if (!isFinite(x)) return;
+    x = Math.max(opts.hardMin ?? -Infinity, Math.min(opts.hardMax ?? Infinity, x));
+    setP(path, x); num.value = x; rng.value = x; opts.onChange?.(x);
+    schedule(); if (fin) { commit(); opts.onCommit?.(); }
+  };
+  if (!opts.virtual) {
+    rng.addEventListener('input', () => apply(rng.value, false));
+    rng.addEventListener('change', () => apply(rng.value, true));
+    num.addEventListener('change', () => apply(num.value, true));
+  }
+  return el('div', { class: 'row' }, el('label', { for: id }, label, hint ? el('small', {}, hint) : null), el('div', { class: 'num' }, num, unit ? el('span', {}, unit) : null), rng);
+}
+function chips(label, path, options, onPick) {
+  const cur = getP(path);
+  return el('div', {}, label ? el('div', { class: 'field-label', style: 'margin-bottom:6px' }, label) : null,
+    el('div', { class: 'chips', role: 'group', 'aria-label': label || '' }, options.map(([val, text]) =>
+      el('button', { class: 'chip', 'aria-pressed': String(cur === val), onclick: () => { setP(path, val); onPick?.(val); commit(); renderPanel(); schedule(); } }, text))));
+}
+function section(key, n, title, summary, body) {
+  const s = el('section', { class: 'sec' + (openSecs.has(key) ? ' open' : '') });
+  const head = el('button', { class: 'sec-head', 'aria-expanded': String(openSecs.has(key)), onclick: () => { openSecs.has(key) ? openSecs.delete(key) : openSecs.add(key); s.classList.toggle('open'); head.setAttribute('aria-expanded', String(openSecs.has(key))); if (key === 'move') drawPlan(); } },
+    el('span', { class: 'hexnum' }, String(n)), el('span', {}, el('span', { class: 'sec-title' }, title), el('span', { class: 'sec-sum' }, summary)),
+    el('svg', { class: 'chev', width: 14, height: 14, viewBox: '0 0 24 24' }));
+  head.querySelector('svg').innerHTML = '<path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2"/>';
+  s.append(head, el('div', { class: 'sec-body' }, body));
+  return s;
+}
+
+const SHAPES = [['rect', 'מלבן'], ['circle', 'עיגול'], ['ellipse', 'אליפסה'], ['hexagon', 'משושה'], ['octagon', 'מתומן']];
+const TESS = [['hex', 'משושים'], ['square', 'ריבועים'], ['triangle', 'משולשים'], ['radial', 'רדיאלי'], ['voronoi', 'וורונוי'], ['sunflower', 'חמנייה']];
+const SURF = [['flat', 'שטוח'], ['dome', 'כיפה'], ['bowl', 'קערה'], ['cone', 'חרוט'], ['ring', 'טבעת'], ['wave', 'גל'], ['ripple', 'אדוות'], ['tilt', 'שיפוע'], ['noise', 'אורגני']];
+const COLBY = [['height', 'לפי גובה'], ['gradient', 'מעבר'], ['radial', 'מהמרכז'], ['field', 'לפי תנועה'], ['random', 'אקראי']];
+const name = (list, v) => (list.find(x => x[0] === v) || [, v])[1];
+const PT = {
+  vortex: { label: 'מערבולת', sub: 'סיבוב מסביב', icon: '<path d="M12 12m-1 0a1 1 0 1 0 2 0a1 1 0 1 0-2 0M12 8a4 4 0 1 1-4 4M12 4a8 8 0 1 1-8 8" fill="none" stroke="currentColor" stroke-width="1.6"/>' },
+  magnet: { label: 'מגנט', sub: 'מושך או דוחה', icon: '<path d="M12 3v5M12 16v5M3 12h5M16 12h5M6 6l3 3M15 15l3 3M18 6l-3 3M9 15l-3 3" fill="none" stroke="currentColor" stroke-width="1.6"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/>' },
+  current: { label: 'זרם', sub: 'הכול לכיוון אחד', icon: '<path d="M3 7h14l-3-3M3 12h16l-3-3M3 17h14l-3-3" fill="none" stroke="currentColor" stroke-width="1.6"/>' }
+};
+
+// ---------- panel ----------
+function renderPanel() {
+  const panel = $('#panel'); const scroll = panel.scrollTop;
+  panel.textContent = '';
+  const s = state;
+  $('#designName').value = s.name;
+
+  // 1 size & shape
+  panel.append(section('shape', 1, 'גודל וצורה', `${name(SHAPES, s.shape.type)} · ${(s.shape.w / 10).toFixed(0)}×${(s.shape.h / 10).toFixed(0)} ס"מ`, [
+    chips('', 'shape.type', SHAPES, v => { if (v === 'circle') s.shape.h = s.shape.w; }),
+    slider('רוחב', '', 'shape.w', 100, 1500, 5, 'מ"מ', { hardMin: 60, onChange: v => { if (s.shape.type === 'circle') s.shape.h = v; } }),
+    s.shape.type === 'circle' ? null : slider('גובה', '', 'shape.h', 100, 1500, 5, 'מ"מ', { hardMin: 60 }),
+    slider('שוליים', 'המסגרת החיצונית', 'shape.rim', 3, 30, 0.5, 'מ"מ')
+  ]));
+
+  // 2 pieces / tessellation
+  const t = s.tess;
+  panel.append(section('tess', 2, 'חלקים', `${name(TESS, t.type)} · תא ${t.size} מ"מ`, [
+    chips('', 'tess.type', TESS),
+    slider('גודל תא', 'רוחב חלק אחד', 'tess.size', 14, 90, 1, 'מ"מ', { hardMin: 10 }),
+    t.type === 'voronoi' ? slider('סדר', 'כמה התאים אחידים', 'tess.relax', 0, 8, 1, '') : null,
+    t.type === 'voronoi' ? el('div', { class: 'btn-row' }, el('button', { class: 'btn small', onclick: () => { t.seed = (t.seed || 1) + 1; commit(); schedule(); } }, 'פיזור אחר')) : null,
+    t.type === 'radial' ? slider('פיתול', 'הזזת כל טבעת', 'tess.twist', -3, 3, 0.1, '') : null,
+    t.type === 'radial' ? slider('חלקים במרכז', '', 'tess.center', 5, 16, 1, '') : null,
+    slider('תא קטן מינימלי', 'קטן מזה נשאר סגור במסגרת', 'tess.minFrac', 0.1, 0.8, 0.05, '')
+  ]));
+
+  // 3 surface
+  const f = s.surface;
+  panel.append(section('surface', 3, 'פני שטח', `${name(SURF, f.type)} · עומק ${f.depth} מ"מ`, [
+    chips('', 'surface.type', SURF),
+    slider('גובה מינימלי', 'החלק הנמוך ביותר', 'surface.minH', 2, 40, 0.5, 'מ"מ'),
+    f.type === 'flat' ? null : slider('עומק', 'הפרש בין נמוך לגבוה', 'surface.depth', 0, 80, 1, 'מ"מ'),
+    ['wave', 'ripple', 'noise'].includes(f.type) ? slider('תדירות', '', 'surface.freq', 0.5, 8, 0.1, '') : null,
+    ['wave', 'tilt'].includes(f.type) ? slider('זווית', '', 'surface.angle', -180, 180, 1, '°') : null,
+    f.type === 'ring' ? slider('רדיוס הטבעת', 'יחסית לגודל', 'surface.ring', 0.1, 1, 0.01, '') : null,
+    f.type === 'noise' ? el('div', { class: 'btn-row' }, el('button', { class: 'btn small', onclick: () => { f.seed = (f.seed || 1) + 1; commit(); schedule(); } }, 'דוגמה אחרת')) : null
+  ]));
+
+  // 4 piece shape
+  const pc = s.piece;
+  panel.append(section('piece', 4, 'צורת החלק', `קימור ${pc.curve} · פיתול ${pc.twist}° · סחרור ${pc.spiral}°`, [
+    el('p', { class: 'hint' }, 'כל חלק בנוי משכבות שמצטמצמות כלפי הקודקוד. כאן קובעים אם הוא עולה ישר כמו פירמידה, או מתעקל, מסתובב ומסתחרר כמו קרן או טופר.'),
+    slider('קימור', 'ישר, או נשאר זקוף ומתכופף למעלה', 'piece.curve', -0.6, 1.5, 0.05, ''),
+    slider('פיתול', 'סיבוב החתך סביב עצמו', 'piece.twist', -180, 180, 1, '°'),
+    slider('סחרור', 'הקודקוד מסתובב בספירלה תוך כדי עלייה', 'piece.spiral', -180, 180, 1, '°'),
+    slider('עובי', 'קטן = נפוח, גדול = דק וחד', 'piece.profile', 0.4, 2.5, 0.05, ''),
+    slider('שכבות', 'יותר = עיקול חלק יותר', 'piece.layers', 3, 48, 1, ''),
+    slider('התמזגות לצורה אחת', 'הפאות של הבסיס נמסות בהדרגה לצורה עגולה וחלקה כלפי מעלה', 'piece.smooth', 0, 1, 0.05, ''),
+    slider('קיטום', '0 = שפיץ מלא, 1 = קטום נמוך', 'piece.truncate', 0, 1, 0.05, '', { onCommit: () => renderPanel() }),
+    pc.truncate > 0 ? slider('כיפתיות', '0 = חיתוך ישר, 1 = כיפה מעוגלת', 'piece.dome', 0, 1, 0.05, '') : null
+  ]));
+
+  // 5 movement
+  const m = s.move;
+  const canvas = el('canvas', { id: 'plan', width: 600, height: 600, 'aria-label': 'תוכנית: לחץ להוספת נקודה, גרור להזזה' });
+  const planWrap = el('div', { class: 'plan-wrap' }, canvas, el('div', { class: 'plan-help' }, addMode ? `לחץ על הפאנל כדי להוסיף ${PT[addMode].label}` : 'גרור נקודה כדי להזיז אותה'));
+  const tools = el('div', { class: 'tools' }, Object.entries(PT).map(([k, d]) => {
+    const b = el('button', { class: 'tool', 'aria-pressed': String(addMode === k), onclick: () => { addMode = addMode === k ? null : k; renderPanel(); } });
+    b.innerHTML = `<svg viewBox="0 0 24 24">${d.icon}</svg><span>${d.label}</span><small>${d.sub}</small>`;
+    return b;
+  }));
+  const plist = el('div', { class: 'pointlist' }, m.points.map((p, i) => el('button', { class: 'chip', 'aria-pressed': String(i === selPoint), onclick: () => { selPoint = i; renderPanel(); } }, `${i + 1}. ${PT[p.type].label}`)));
+  const p = m.points[selPoint];
+  const R = Math.max(s.shape.w, s.shape.h);
+  const editor = p ? el('div', { class: 'pt-editor' },
+    el('div', { class: 'btn-row' },
+      el('button', { class: 'btn small', onclick: () => { const c = clone(p); c.x += 20; c.y -= 20; m.points.push(c); selPoint = m.points.length - 1; commit(); renderPanel(); schedule(); } }, 'שכפל'),
+      el('button', { class: 'btn small', onclick: () => { m.points.splice(selPoint, 1); selPoint = Math.max(0, selPoint - 1); commit(); renderPanel(); schedule(); } }, 'מחק')),
+    slider(p.type === 'magnet' ? 'עוצמה' : 'עוצמה', p.type === 'magnet' ? 'שלילי = דוחה' : (p.type === 'vortex' ? 'שלילי = נגד כיוון השעון' : ''), `move.points.${selPoint}.strength`, -2, 2, 0.05, ''),
+    p.type === 'vortex' ? slider('פתיחה', 'פנימה או החוצה', `move.points.${selPoint}.opening`, -1, 1, 0.05, '') : null,
+    p.type === 'current' ? slider('כיוון', '', `move.points.${selPoint}.angle`, -180, 180, 1, '°') : null,
+    slider('קימור נוסף', 'לחלקים באזור הנקודה', `move.points.${selPoint}.curve`, -1, 1.5, 0.05, ''),
+    slider('סחרור נוסף', 'לחלקים באזור הנקודה', `move.points.${selPoint}.spiral`, -180, 180, 1, '°'),
+    slider('רדיוס', 'השפעה מלאה', `move.points.${selPoint}.radius`, 0, R, 1, 'מ"מ'),
+    slider('דעיכה', 'עד שההשפעה נעלמת', `move.points.${selPoint}.fade`, 1, R * 1.5, 1, 'מ"מ'),
+    slider('מיקום אופקי', '', `move.points.${selPoint}.x`, -s.shape.w / 2, s.shape.w / 2, 1, 'מ"מ'),
+    slider('מיקום אנכי', '', `move.points.${selPoint}.y`, -s.shape.h / 2, s.shape.h / 2, 1, 'מ"מ')
+  ) : el('p', { class: 'hint' }, 'אין נקודות תנועה. בחר סוג נקודה ולחץ על הפאנל.');
+  panel.append(section('move', 5, 'תנועה', `${m.points.length} נקודות · הטיה ${m.lean}`, [
+    el('p', { class: 'hint' }, 'נקודות על הפאנל מכוונות את קודקודי החלקים. הקווים בתוכנית מראים לאן כל קודקוד נוטה.'),
+    planWrap, tools, plist, editor,
+    slider('הטיה כללית', 'כמה הקודקודים נוטים', 'move.lean', 0, 2, 0.05, ''),
+    slider('הגבהה לפי תנועה', 'חדים יותר איפה שהמשיכה חזקה', 'move.pull', 0, 1, 0.05, '')
+  ]));
+  bindPlan(canvas);
+
+  // 5 frame & fit
+  const fr = s.frame;
+  panel.append(section('frame', 6, 'מסגרת והתאמה', `עובי ${fr.t} · מרווח ${fr.clr} מ"מ`, [
+    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל לשני המרווחים (נעיצה ומחבר) היא 0.05 מ"מ, לפי בדיקת ההתאמה על ה-MK4.'),
+    slider('עובי המסגרת', '', 'frame.t', 2, 6, 0.2, 'מ"מ'),
+    slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 6, 0.1, 'מ"מ'),
+    slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.05', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
+    slider('רווח בין חלקים', '', 'frame.gap', 0.1, 2, 0.05, 'מ"מ'),
+    el('div', { class: 'field-label' }, 'חיבור בין אריחים'),
+    el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. בכל חיבור יש מחברי זנב יונה שננעלים כמו פאזל, ודבק רק מקבע אותם.'),
+    slider('רוחב צלע בחיבור', 'מקום למחבר', 'frame.joint', 6, 14, 0.5, 'מ"מ'),
+    slider('רוחב צוואר המחבר', '', 'frame.knobW', 3, 8, 0.5, 'מ"מ'),
+    slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.05', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
+    el('div', { class: 'field-label' }, 'תלייה על הקיר'),
+    el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: fr.hang.on, onchange: (e) => { fr.hang.on = e.target.checked; commit(); renderPanel(); schedule(); } }), 'חורי תלייה בארבע הפינות'),
+    fr.hang.on ? el('p', { class: 'hint' }, 'ליד כל פינה יש מאחור חור מנעול בצורת L: ראש הבורג נכנס בעיגול, והפאנל מחליק עד שהבורג נתפס בקצה הזרוע. הזרוע האנכית לתלייה לאורך והזרוע שפונה לצד לתלייה לרוחב, ותמיד משתמשים בשני הברגים העליונים. החלקים והחלוקה נראים בדיוק כמו בלי חורי תלייה: החור ממוקם רק מתחת לחלק שיש בתוכו מקום לחלל, גם אם הוא לא בפינה ממש.') : null,
+    fr.hang.on ? slider('קוטר ראש הבורג', '', 'frame.hang.head', 6, 12, 0.1, 'מ"מ') : null,
+    fr.hang.on ? slider('קוטר גוף הבורג', '', 'frame.hang.shank', 3, 6, 0.1, 'מ"מ') : null,
+    fr.hang.on ? slider('עובי ראש הבורג', 'דק יותר = יותר חלקים מתאימים', 'frame.hang.headH', 2, 6, 0.1, 'מ"מ') : null,
+    fr.hang.on ? slider('אורך ההחלקה', '', 'frame.hang.slot', 8, 20, 0.5, 'מ"מ') : null,
+    slider('זווית מקסימלית בלי תמיכות', '', 'print.overhang', 30, 60, 1, '°'),
+    el('div', {}, el('div', { class: 'field-label', style: 'margin-bottom:6px' }, 'צבע המסגרת'), swatchGrid(fr.color, c => { fr.color = c; commit(); renderPanel(); schedule(); }))
+  ]));
+
+  // 6 colours
+  const col = s.color;
+  const bandBtns = el('div', { class: 'bands' }, col.bands.map((c, i) => el('button', { class: 'band', style: `background:${c};color:${ink(c)}`, 'aria-pressed': String(i === selBand), 'aria-label': `רצועה ${i + 1}`, onclick: () => { selBand = i; renderPanel(); } }, String(i + 1))));
+  panel.append(section('color', 7, 'צבעים', `${col.bands.length} צבעים · ${name(COLBY, col.by)}`, [
+    slider('מספר צבעים', 'גליל אחד לכל צבע', '__bands', 1, 6, 1, '', { virtual: true }),
+    chips('צביעה', 'color.by', COLBY),
+    col.by === 'gradient' ? slider('כיוון המעבר', '', 'color.angle', -180, 180, 1, '°') : null,
+    col.by === 'random' ? el('div', { class: 'btn-row' }, el('button', { class: 'btn small', onclick: () => { col.seed = (col.seed || 1) + 1; commit(); schedule(); } }, 'ערבב מחדש')) : null,
+    el('div', { class: 'field-label' }, 'רצועות, מהנמוך לגבוה'),
+    el('div', { class: 'btn-row' }, bandBtns, el('button', { class: 'btn small', title: 'הפוך סדר', onclick: () => { col.bands.reverse(); selBand = col.bands.length - 1 - selBand; commit(); renderPanel(); schedule(); } }, '⇄')),
+    swatchGrid(col.bands[selBand], c => { col.bands[selBand] = c; commit(); renderPanel(); schedule(); })
+  ]));
+  // band-count slider is virtual
+  const bs = panel.querySelector('#c___bands');
+  if (bs) {
+    const row = bs.closest('.row'), rng = row.querySelector('input[type=range]');
+    const setN = (n, fin) => {
+      n = Math.max(1, Math.min(6, Math.round(n))); bs.value = n; rng.value = n;
+      const cur = col.bands;
+      while (cur.length < n) cur.push(PR.palette[(cur.length * 5 + 3) % PR.palette.length][1]);
+      cur.length = n; selBand = Math.min(selBand, n - 1); schedule();
+      if (fin) { commit(); renderPanel(); }
+    };
+    bs.value = col.bands.length; rng.value = col.bands.length;
+    rng.oninput = () => setN(+rng.value, false); rng.onchange = () => setN(+rng.value, true); bs.onchange = () => setN(+bs.value, true);
+  }
+
+  // 7 printer
+  const pr = s.print;
+  panel.append(section('print', 8, 'מדפסת', `${pr.bedW}×${pr.bedH} מ"מ (Prusa MK4)`, [
+    el('p', { class: 'hint' }, 'ברירת המחדל מתאימה ל-Prusa MK4. האפליקציה מחלקת את המסגרת לאריחים ואת החלקים לפלטות לפי הגודל הזה.'),
+    slider('רוחב משטח', '', 'print.bedW', 120, 400, 1, 'מ"מ'),
+    slider('עומק משטח', '', 'print.bedH', 120, 400, 1, 'מ"מ'),
+    slider('גובה הדפסה', '', 'print.bedZ', 100, 400, 1, 'מ"מ'),
+    slider('שוליים במשטח', '', 'print.margin', 0, 20, 1, 'מ"מ'),
+    slider('רווח בין חלקים בפלטה', '', 'print.spacing', 1, 10, 0.5, 'מ"מ'),
+    el('label', { class: 'check' }, el('input', { type: 'checkbox', checked: pr.engrave !== false, onchange: (e) => { pr.engrave = e.target.checked; commit(); } }), 'מספר שקוע בתחתית כל חלק'),
+    el('p', { class: 'hint' }, 'המספר מהמפה, בגובה 2.5 עד 6 מ"מ ובעומק 0.4 מ"מ (שתי שכבות), בצד שנוגע במשטח ההדפסה. לא נראה כשהפאנל מורכב.')
+  ]));
+  panel.scrollTop = scroll;
+  drawPlan();
+}
+function ink(hex) { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150 ? '#1b211e' : '#fff'; }
+function swatchGrid(cur, pick) {
+  const g = el('div', { class: 'swatches' }, PR.palette.map(([n, hex]) => el('button', { class: 'sw', style: `background:${hex}`, title: n, 'aria-label': n, 'aria-pressed': String(cur?.toLowerCase() === hex), onclick: () => pick(hex) })));
+  const custom = el('input', { type: 'color', value: cur || '#888888', 'aria-label': 'צבע אחר' });
+  custom.addEventListener('change', () => pick(custom.value));
+  return el('div', { style: 'display:flex;flex-direction:column;gap:8px' }, g, el('label', { class: 'custom-color' }, custom, 'צבע אחר'));
+}
+
+// ---------- plan canvas (movement points) ----------
+let planCv = null;
+function planXf() {
+  const cv = planCv, W = cv.width, H = cv.height, s = state.shape;
+  const k = Math.min((W - 40) / s.w, (H - 40) / s.h);
+  return { k, toPx: (x, y) => [W / 2 + x * k, H / 2 - y * k], toMm: (px, py) => [(px - W / 2) / k, (H / 2 - py) / k] };
+}
+function bindPlan(cv) {
+  planCv = cv;
+  const s = state.shape;
+  cv.height = Math.round(600 * Math.min(1.2, Math.max(0.5, s.h / s.w)));
+  let drag = -1;
+  const pos = e => { const r = cv.getBoundingClientRect(); return [(e.clientX - r.left) * cv.width / r.width, (e.clientY - r.top) * cv.height / r.height]; };
+  cv.addEventListener('pointerdown', e => {
+    const [px, py] = pos(e), X = planXf();
+    if (addMode) {
+      const [x, y] = X.toMm(px, py);
+      const R = Math.max(state.shape.w, state.shape.h);
+      state.move.points.push({ type: addMode, x: Math.round(x), y: Math.round(y), strength: 1, radius: Math.round(R * 0.25), fade: Math.round(R * 0.4), opening: 0, angle: 0, curve: 0, spiral: 0 });
+      selPoint = state.move.points.length - 1; addMode = null; commit(); renderPanel(); schedule(); return;
+    }
+    let best = -1, bd = 30;
+    state.move.points.forEach((p, i) => { const [qx, qy] = X.toPx(p.x, p.y); const d = Math.hypot(qx - px, qy - py); if (d < bd) { bd = d; best = i; } });
+    if (best >= 0) { drag = best; selPoint = best; cv.setPointerCapture(e.pointerId); drawPlan(); }
+  });
+  cv.addEventListener('pointermove', e => {
+    if (drag < 0) return;
+    const [px, py] = pos(e), [x, y] = planXf().toMm(px, py), s = state.shape;
+    const p = state.move.points[drag];
+    p.x = Math.round(Math.max(-s.w / 2, Math.min(s.w / 2, x))); p.y = Math.round(Math.max(-s.h / 2, Math.min(s.h / 2, y)));
+    drawPlan(); schedule();
+  });
+  const end = () => { if (drag >= 0) { drag = -1; commit(); renderPanel(); } };
+  cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
+}
+function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
+function drawPlan() {
+  const cv = planCv; if (!cv || !cv.isConnected) return;
+  const ctx = cv.getContext('2d'), X = planXf();
+  ctx.clearRect(0, 0, cv.width, cv.height);
+  const line = cssVar('--line'), inkc = cssVar('--ink'), acc = cssVar('--accent'), muted = cssVar('--muted');
+  const path = poly => { ctx.beginPath(); poly.forEach((q, i) => { const [x, y] = X.toPx(q[0], q[1]); i ? ctx.lineTo(x, y) : ctx.moveTo(x, y); }); ctx.closePath(); };
+  if (model) {
+    path(model.outer); ctx.fillStyle = line; ctx.globalAlpha = 0.35; ctx.fill(); ctx.globalAlpha = 1;
+    ctx.lineWidth = 1;
+    for (const c of model.pieces) { path(c.opening); ctx.fillStyle = state.color.bands[c.band]; ctx.globalAlpha = 0.28; ctx.fill(); ctx.globalAlpha = 1; }
+    ctx.strokeStyle = inkc; ctx.lineWidth = 1.6;
+    for (const c of model.pieces) {
+      const [x0, y0] = X.toPx(c.c[0], c.c[1]), [x1, y1] = X.toPx(c.apex[0], c.apex[1]);
+      ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
+      ctx.beginPath(); ctx.arc(x1, y1, 2.2, 0, Math.PI * 2); ctx.fillStyle = inkc; ctx.fill();
+    }
+  }
+  state.move.points.forEach((p, i) => {
+    const [x, y] = X.toPx(p.x, p.y);
+    ctx.beginPath(); ctx.arc(x, y, p.radius * X.k, 0, Math.PI * 2); ctx.setLineDash([6, 5]); ctx.strokeStyle = muted; ctx.lineWidth = 1.2; ctx.stroke(); ctx.setLineDash([]);
+    ctx.beginPath(); ctx.arc(x, y, i === selPoint ? 13 : 10, 0, Math.PI * 2); ctx.fillStyle = i === selPoint ? acc : inkc; ctx.fill();
+    ctx.fillStyle = i === selPoint ? '#1b211e' : cssVar('--panel'); ctx.font = '600 13px IBM Plex Mono, monospace'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(String(i + 1), x, y + 1);
+  });
+}
+
+// ---------- 3D view ----------
+const host = $('#view3d');
+const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+host.append(renderer.domElement);
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(32, 1, 1, 20000);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true; controls.dampingFactor = 0.12;
+scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f8a, 1.1));
+const sun = new THREE.DirectionalLight(0xffffff, 2.2);
+sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.6;
+scene.add(sun, sun.target);
+scene.background = new THREE.Color(0xb9b8b2);
+const wallMat = new THREE.MeshStandardMaterial({ color: 0xd8d6d0, roughness: 0.95, side: THREE.DoubleSide });
+const wall = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), wallMat);
+wall.receiveShadow = true; wall.position.z = -0.6; scene.add(wall);
+const group = new THREE.Group(); scene.add(group);
+let frameGroup = new THREE.Group(), pieceGroup = new THREE.Group();
+group.add(frameGroup, pieceGroup);
+let lastSize = null, camMode = 'iso';
+
+function geomFromMesh(m) {
+  const g = new THREE.BufferGeometry();
+  const pos = new Float32Array(m.f.length * 3);
+  for (let i = 0; i < m.f.length; i++) { const k = m.f[i] * 3; pos[i * 3] = m.v[k]; pos[i * 3 + 1] = m.v[k + 1]; pos[i * 3 + 2] = m.v[k + 2]; }
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.computeVertexNormals();
+  return g;
+}
+function disposeGroup(gr) { gr.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); gr.clear(); }
+function update3D() {
+  disposeGroup(frameGroup); disposeGroup(pieceGroup);
+  if (!model) return;
+  const fr = state.frame;
+  const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(fr.color), roughness: 0.75, flatShading: true });
+  model.tiles.forEach(tl => { const me = new THREE.Mesh(geomFromMesh(E.tileMesh(tl, fr)), frameMat); me.castShadow = me.receiveShadow = true; frameGroup.add(me); });
+  state.color.bands.forEach((hex, b) => {
+    const merged = new E.Mesh();
+    model.pieces.forEach(c => { if (c.band === b) merged.append(E.pieceMesh(c, fr)); });
+    if (!merged.f.length) return;
+    const me = new THREE.Mesh(geomFromMesh(merged), new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true }));
+    me.castShadow = me.receiveShadow = true; pieceGroup.add(me);
+  });
+  const s = state.shape, size = Math.max(s.w, s.h);
+  wall.scale.set(size * 4, size * 4, 1);
+  sun.position.set(-size * 0.25, size * 1.1, size * 0.9); sun.target.position.set(0, 0, 0);
+  const sc = sun.shadow.camera; sc.left = sc.bottom = -size; sc.right = sc.top = size; sc.near = 1; sc.far = size * 4; sc.updateProjectionMatrix();
+  const key = `${s.w}x${s.h}`;
+  if (key !== lastSize) { lastSize = key; setCam(camMode, true); }
+  invalidate();
+}
+function setCam(mode, jump) {
+  camMode = mode;
+  const s = state.shape, size = Math.max(s.w, s.h * 1.15), d = size / (2 * Math.tan(THREE.MathUtils.degToRad(16))) * 1.12;
+  const dirs = { iso: [-0.55, 0.35, 0.76], front: [0, 0, 1], side: [-0.93, 0.08, 0.36] };
+  const v = new THREE.Vector3(...dirs[mode]).normalize().multiplyScalar(d);
+  camera.position.copy(v); controls.target.set(0, 0, 10); camera.near = d / 50; camera.far = d * 10; camera.updateProjectionMatrix(); controls.update(); invalidate();
+  document.querySelectorAll('#camViews [data-cam]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === mode)));
+}
+function resize() {
+  const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return;
+  renderer.setSize(w, h, false); renderer.domElement.style.width = w + 'px'; renderer.domElement.style.height = h + 'px';
+  camera.aspect = w / h; camera.updateProjectionMatrix(); invalidate();
+}
+new ResizeObserver(resize).observe(host);
+// render on demand: only while the camera moves or after the scene changed (keeps the CPU free for building print files)
+var dirty = 2;
+function invalidate() { dirty = 2; }
+controls.addEventListener('change', invalidate);
+(function loop() { if (controls.update()) dirty = 2; if (dirty > 0) { renderer.render(scene, camera); dirty--; } requestAnimationFrame(loop); })();
+
+// ---------- rebuild pipeline ----------
+let timer = 0;
+function schedule() { clearTimeout(timer); $('#busy').hidden = false; timer = setTimeout(rebuild, 70); }
+function rebuild() {
+  const t0 = performance.now();
+  try { model = E.build(state); buildError = null; }
+  catch (e) { buildError = e.message || String(e); console.warn(e); }
+  $('#busy').hidden = true;
+  if (!buildError) { update3D(); drawPlan(); if (!$('#viewmap').hidden) drawMap(); }
+  updateBar();
+  window.__lastBuildMs = performance.now() - t0;
+}
+function plateCount() {
+  if (!model) return 0;
+  let n = 0;
+  state.color.bands.forEach((_, b) => { const items = model.pieces.filter(c => c.band === b).map(c => ({ w: c.fp.w, h: c.fp.h })); if (items.length) n += E.packPlates(items, state.print).length; });
+  return n;
+}
+function weightGrams() {
+  if (!model) return 0;
+  let vol = 0; const fr = state.frame;
+  model.pieces.forEach(c => vol += E.meshVolume(E.pieceMesh(c, fr)) * 0.5);
+  model.tiles.forEach(tl => vol += E.meshVolume(E.tileMesh(tl, fr)) * 0.85);
+  return vol / 1000 * 1.24;
+}
+function updateBar() {
+  const msg = $('#msg'); msg.textContent = '';
+  if (buildError) { msg.append(el('span', { class: 'err' }, buildError)); $('#kitBtn').disabled = true; return; }
+  $('#kitBtn').disabled = false;
+  if (model.warnings.length) model.warnings.forEach(w => msg.append(el('div', { class: w.kind === 'warn' ? 'warn' : '' }, w.text)));
+  else msg.append('הכול מוכן להדפסה. כל קודקוד נבדק לזווית הדפסה בלי תמיכות ולמרחק מהשכנים.');
+  const stats = [[model.pieces.length, 'חלקים'], [state.color.bands.length, 'צבעים'], [model.tiles.length, 'אריחי מסגרת'], [plateCount(), 'פלטות'], [Math.round(model.maxZ) + ' מ"מ', 'עומק'], ['≈' + Math.round(weightGrams()) + ' ג׳', 'משקל']];
+  const st = $('#stats'); st.textContent = '';
+  stats.forEach(([v, l]) => st.append(el('div', { class: 'stat' }, el('b', {}, String(v)), el('span', {}, l))));
+}
+
+// ---------- assembly map view ----------
+function drawMap() { if (model) $('#viewmap').innerHTML = K.assemblySVG(model, state); }
+function setTab(map) {
+  $('#tab3d').setAttribute('aria-pressed', String(!map)); $('#tabMap').setAttribute('aria-pressed', String(map));
+  $('#viewmap').hidden = !map; $('#view3d').style.visibility = map ? 'hidden' : 'visible';
+  $('#camViews').hidden = map; $('#stageNote').textContent = map ? 'המספרים כאן זהים למספרים בפלטות. קו כחול מקווקו: גבול של אריח מסגרת.' : 'גרירה: סיבוב · Shift או כפתור ימני: הזזה · גלגלת: זום';
+  if (map) drawMap();
+}
+
+// ---------- downloads ----------
+const dlP = (window.claude && window.claude.use) ? window.claude.use('downloads').catch(() => null) : Promise.resolve(null);
+function toast(t, ms = 3800) { const e = $('#toast'); e.textContent = t; e.hidden = false; clearTimeout(e._t); e._t = setTimeout(() => e.hidden = true, ms); }
+async function offerFile(filename, blob) {
+  const dl = await Promise.race([dlP, new Promise(r => setTimeout(() => r(null), 1500))]);
+  if (dl) {
+    try { await dl.save({ filename, data: blob }); toast('הקובץ נשמר.'); }
+    catch (e) { if (e && e.code === 'declined') toast('ההורדה בוטלה.'); else toast('לא הצלחתי לשמור את הקובץ כאן (' + (e?.code || 'שגיאה') + ').'); }
+    return;
+  }
+  const a = el('a', { href: URL.createObjectURL(blob), download: filename }); document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 30000);
+}
+const slug = s => (s || 'panel').replace(/[^\w֐-׿-]+/g, '-').replace(/^-|-$/g, '') || 'panel';
+$('#kitBtn').addEventListener('click', async () => {
+  if (!model) return;
+  const btn = $('#kitBtn'); btn.disabled = true; const old = btn.innerHTML; btn.lastChild.textContent = 'מכין קבצים…';
+  try {
+    const names = state.color.bands.map(h => (PR.palette.find(p => p[1] === h.toLowerCase()) || [h.slice(1)])[0]);
+    const { blob } = await K.buildKit(model, state, window.JSZip, { colorNames: names.map(n => /^[0-9a-f]{6}$/i.test(n) ? n : n) });
+    await offerFile('tavlit-print-kit.zip', blob);
+  } catch (e) { console.error(e); toast('יצירת הערכה נכשלה: ' + e.message, 6000); }
+  btn.innerHTML = old; btn.disabled = false;
+});
+$('#fitBtn').addEventListener('click', async () => {
+  try { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
+  catch (e) { toast('יצירת בדיקת ההתאמה נכשלה: ' + e.message, 6000); }
+});
+$('#saveBtn').addEventListener('click', () => offerFile('tavlit-design.json', new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })));
+$('#loadFile').addEventListener('change', async e => {
+  const f = e.target.files[0]; if (!f) return;
+  try { state = normalize(JSON.parse(await f.text())); selPoint = 0; selBand = 0; commit(); renderPanel(); schedule(); lastSize = null; toast('העיצוב נטען.'); }
+  catch (err) { toast('הקובץ לא נראה כמו עיצוב שנשמר מכאן.'); }
+  e.target.value = '';
+});
+
+// ---------- header & tabs ----------
+const sel = $('#presetSel');
+sel.append(el('option', { value: '' }, 'עיצובים מוכנים…'), ...PR.presets.map(p => el('option', { value: p.key }, p.label)));
+sel.addEventListener('change', () => {
+  const p = PR.presets.find(x => x.key === sel.value); sel.value = ''; if (!p) return;
+  state = normalize(clone(p.state)); selPoint = 0; selBand = 0; addMode = null; lastSize = null; commit(); renderPanel(); schedule();
+});
+$('#designName').addEventListener('change', e => { state.name = e.target.value.trim() || 'עיצוב'; commit(); });
+$('#undoBtn').addEventListener('click', () => hIndex > 0 && restore(hIndex - 1));
+$('#redoBtn').addEventListener('click', () => hIndex < history.length - 1 && restore(hIndex + 1));
+document.addEventListener('keydown', e => {
+  if (!(e.ctrlKey || e.metaKey) || e.target.matches('input[type=number],input[type=text],input:not([type])')) return;
+  if (e.key.toLowerCase() === 'z' && !e.shiftKey) { e.preventDefault(); hIndex > 0 && restore(hIndex - 1); }
+  else if (e.key.toLowerCase() === 'y' || (e.key.toLowerCase() === 'z' && e.shiftKey)) { e.preventDefault(); hIndex < history.length - 1 && restore(hIndex + 1); }
+});
+$('#tab3d').addEventListener('click', () => setTab(false));
+$('#tabMap').addEventListener('click', () => setTab(true));
+document.querySelectorAll('#camViews [data-cam]').forEach(b => b.addEventListener('click', () => setCam(b.dataset.cam)));
+$('#showFrame').addEventListener('click', e => { frameGroup.visible = !frameGroup.visible; e.currentTarget.setAttribute('aria-pressed', String(frameGroup.visible)); });
+$('#showPieces').addEventListener('click', e => { pieceGroup.visible = !pieceGroup.visible; e.currentTarget.setAttribute('aria-pressed', String(pieceGroup.visible)); });
+matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', drawPlan);
+
+renderPanel(); updateUndo(); resize(); rebuild();
+window.__tavlit = { get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
+
+</script>
