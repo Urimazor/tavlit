@@ -1184,20 +1184,26 @@ button { cursor: pointer; }
     if (trunc > 0 && Math.abs(tilt) > 1e-4) {
       // tilted cut: a plane through the centre line at the cut height; every vertex column runs up
       // until it meets that plane, so the layers lean with it and the top face is flat on the plane
-      const ctr = at(tEnd), zC = c.z0 + c.hb * tEnd, tn = Math.tan(tilt), d = sh.cutDir || [1, 0];
-      const zp = (x, y) => zC - tn * ((x - ctr[0]) * d[0] + (y - ctr[1]) * d[1]);
+      // the plane is hinged at the low edge of the cut section, so it only rises from the truncation height
+      // and never dives into the base (that folded the walls and made pieces shrink)
+      const ctr = at(tEnd), zC = c.z0 + c.hb * tEnd, tn = Math.tan(Math.abs(tilt)), d0 = sh.cutDir || [1, 0], d = tilt < 0 ? [-d0[0], -d0[1]] : d0;
+      const proj = (x, y) => (x - ctr[0]) * d[0] + (y - ctr[1]) * d[1];
+      const pMax = Math.max(...section(tEnd).poly.map(q => proj(q[0], q[1])));
+      const zp = (x, y) => zC + tn * (pMax - proj(x, y));
       const T = c.body.map(v => {
         const f = tt => { const q = vAt(v, tt); return c.z0 + c.hb * tt - zp(q[0], q[1]); };
         if (f(0.97) <= 0) return 0.97;
         if (f(0.06) >= 0) return 0.06;
         let lo = 0.06, hi = 0.97;
-        for (let it = 0; it < 22; it++) { const mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; }
+        for (let it = 0; it < 14; it++) { const mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; }
         return (lo + hi) / 2;
       });
-      const push = (poly, zv) => c.layers.push({ z: Math.max(...zv), zLo: Math.min(...zv), zv, poly });
+      // wv: rough section width at each vertex, so the overhang check can skip the thin tip like it does for flat layers
+      const push = (poly, zv, wv) => c.layers.push({ z: Math.max(...zv), zLo: Math.min(...zv), zv, wv, poly });
+      const bodyW = Math.sqrt(Math.max(1, Math.abs(area(c.body))));
       for (let k = 1; k <= N; k++) {
         const ts = T.map(t => t * k / N);
-        push(c.body.map((v, i) => vAt(v, ts[i])), ts.map(t => c.z0 + c.hb * t));
+        push(c.body.map((v, i) => vAt(v, ts[i])), ts.map(t => c.z0 + c.hb * t), ts.map(t => bodyW * Math.pow(1 - t, sh.profile)));
       }
       const last = c.layers[c.layers.length - 1];
       if ((sh.dome || 0) > 0) {
@@ -1206,10 +1212,10 @@ button { cursor: pointer; }
           const th = j / M * Math.PI / 2, k = Math.cos(th);
           const poly = last.poly.map(v => [ctr[0] + (v[0] - ctr[0]) * k, ctr[1] + (v[1] - ctr[1]) * k]);
           // follow the plane from the real top ring (it can sit above the plane where a column was clamped)
-          push(poly, poly.map((q, i) => last.zv[i] + zp(q[0], q[1]) - zp(last.poly[i][0], last.poly[i][1]) + h * Math.sin(th)));
+          push(poly, poly.map((q, i) => last.zv[i] + zp(q[0], q[1]) - zp(last.poly[i][0], last.poly[i][1]) + h * Math.sin(th)), last.wv.map(w => w * k));
         }
-        c.apex = ctr; c.zApex = zC + h;
-      } else { c.apex = ctr; c.zApex = zC; c.tipFlat = true; }
+        c.apex = ctr; c.zApex = zp(ctr[0], ctr[1]) + h;
+      } else { c.apex = ctr; c.zApex = zp(ctr[0], ctr[1]); c.tipFlat = true; }
       c.zMax = Math.max(c.zApex, ...c.layers.map(l => l.z));
     } else if (trunc > 0) {
       let last = null;
@@ -1277,7 +1283,8 @@ button { cursor: pointer; }
     while (kmax > 1 && Math.sqrt(Math.abs(area(R[kmax].map(v => [v[0], v[1]])))) < 3) kmax--;
     if (kmax < R.length - 1) R.length = kmax + 1;
     for (let k = 0; k < R.length - 1; k++) for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n;
+      const j = (i + 1) % n, wv = c.layers[k] && c.layers[k].wv;
+      if (wv && Math.min(wv[i], wv[j]) < 3) continue;   // tilted cut: thin tip part of this column
       if (triBad(R[k][i], R[k][j], R[k + 1][j], lim) || triBad(R[k][i], R[k + 1][j], R[k + 1][i], lim)) return true;
     }
     if (kmax === c.layers.length && !c.tipFlat) { const T = R[R.length - 1]; for (let i = 0; i < n; i++) if (triBad(T[i], T[(i + 1) % n], A, lim)) return true; }
