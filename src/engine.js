@@ -697,7 +697,7 @@
     cells.forEach(c => { if (c.seam) c.seam = c.seam.map(o => (o && o.mergedInto) || o); });
     // dovetail joints across seam edges
     const knobs = [];
-    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.05;
+    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.1;
     const trap = (m, u, n, w1, w2, h, back) => [
       [m[0] - u[0] * w1 / 2 - n[0] * back, m[1] - u[1] * w1 / 2 - n[1] * back],
       [m[0] + u[0] * w1 / 2 - n[0] * back, m[1] + u[1] * w1 / 2 - n[1] * back],

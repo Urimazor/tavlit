@@ -194,7 +194,7 @@
     }
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
-    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.05;
+    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.1;
     // the seam between cell 3 and 4 gets the wide rib and a dovetail, exactly like the real frame
     const openings = cells.map((c, i) => E.inset(c, [half, i === 2 ? jh2 : half, half, i === 3 ? jh2 : half]));
     const xs = -W / 2 + rim + 3 * cs;
