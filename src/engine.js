@@ -347,14 +347,14 @@
   }
   // per-point additions to curvature and spiral, weighted like the field
   function modsAt(points, x, y) {
-    let curve = 0, spiral = 0;
+    let curve = 0, spiral = 0, cut = 0;
     for (const p of points) {
-      if (!p.curve && !p.spiral) continue;
+      if (!p.curve && !p.spiral && !p.cut) continue;
       const r = Math.hypot(x - p.x, y - p.y), R = p.radius, F = Math.max(1, p.fade);
       const w = r <= R ? 1 : r >= R + F ? 0 : 1 - smooth((r - R) / F);
-      curve += (p.curve || 0) * w; spiral += (p.spiral || 0) * w;
+      curve += (p.curve || 0) * w; spiral += (p.spiral || 0) * w; cut += (p.cut || 0) * w;
     }
-    return { curve, spiral };
+    return { curve, spiral, cut };
   }
   function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 
@@ -553,7 +553,7 @@
           const B = baseShape && baseShape.get(c.id);
           if (!B || B.zApex < pocketTop + pocketRoof + 0.5) return null;
           // sections of the unchanged piece that must enclose each level of the hollow (+ its wall)
-          const sectionsUpTo = zTop => { const out = [B.collar]; let prevZ = B.z0; for (const l of B.layers) { if (prevZ >= zTop) break; out.push(l.poly); prevZ = l.z; } return out; };
+          const sectionsUpTo = zTop => { const out = [B.collar]; let prevZ = B.z0; for (const l of B.layers) { if (prevZ >= zTop) break; out.push(l.poly); prevZ = l.zLo ?? l.z; } return out; };
           // highest (smallest) sections first, so a misfit is found after few tests
           // the region every one of those sections covers, as one outline per level (fast to test against)
           const common = list => {
@@ -818,7 +818,7 @@
     const usedTiles = tiles;
 
     // heights, lean and piece shape
-    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0 }, st.piece || {});
+    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, st.piece || {});
     // finer outline so the facets can melt into a round section higher up
     if (ps.smooth > 0) pieces.forEach(c => {
       const q = Math.max(1, Math.ceil(36 / c.body.length));
@@ -830,8 +830,35 @@
       c.f = fieldAt(mv.points, c.c[0], c.c[1]);
       c.fm = Math.hypot(c.f[0], c.f[1]); fmax = Math.max(fmax, c.fm);
       const md = modsAt(mv.points, c.c[0], c.c[1]);
-      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, truncate: ps.truncate, dome: ps.dome };
+      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, truncate: ps.truncate, dome: ps.dome, cutTilt: 0, cutDir: [1, 0] };
+      c.cutAdd = md.cut;
     });
+    // angle of the truncation cut: 0 = parallel to the wall; the cut face turns toward a direction
+    // given by the lean field, the centre, a spiral, the slope of the surface, or a fixed heading
+    if ((ps.truncate || 0) > 0) {
+      const by = ps.cutBy || 'field', off = (ps.cutAngle || 0) * Math.PI / 180, vary = Math.max(0, Math.min(1, ps.cutVary || 0));
+      const W2 = Math.max(1, st.shape.w / 2), H2 = Math.max(1, st.shape.h / 2);
+      let gmax = 0;
+      pieces.forEach(c => {
+        const x = c.c[0], y = c.c[1], rr = Math.min(1, Math.hypot(x / W2, y / H2));
+        let a = 0, s = 1;
+        if (by === 'field') { a = c.fm > 1e-9 ? Math.atan2(c.f[1], c.f[0]) : 0; s = c.fm; }
+        else if (by === 'radial') { a = Math.atan2(y, x); s = rr; }
+        else if (by === 'spiral') { a = Math.atan2(y, x) + Math.PI / 2 + 2 * Math.PI * rr; s = rr; }
+        else if (by === 'surface') {
+          const e = 1, gx = (surfaceAt(sf, st.shape, x + e, y) - surfaceAt(sf, st.shape, x - e, y)) / (2 * e), gy = (surfaceAt(sf, st.shape, x, y + e) - surfaceAt(sf, st.shape, x, y - e)) / (2 * e);
+          s = Math.hypot(gx, gy); a = s > 1e-12 ? Math.atan2(-gy, -gx) : 0; gmax = Math.max(gmax, s);
+        }
+        c.cutRaw = [a, s];
+      });
+      pieces.forEach(c => {
+        let [a, s] = c.cutRaw;
+        if (by === 'field') s = s / Math.max(1e-6, fmax); else if (by === 'surface') s = s / Math.max(1e-12, gmax); else if (by === 'fixed') s = 1;
+        const deg = Math.max(-75, Math.min(75, ((ps.cutTilt || 0) + (c.cutAdd || 0)) * ((1 - vary) + vary * s)));
+        c.shape.cutTilt = deg * Math.PI / 180; c.shape.cutDir = [Math.cos(a + off), Math.sin(a + off)];
+        delete c.cutRaw;
+      });
+    }
     pieces.forEach(c => {
       let h = sf.minH + sf.depth * c.s;
       if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
@@ -905,7 +932,7 @@
     const seams = { knobs: knobs.length };
 
     // piece height check vs printer
-    const maxZ = Math.max(...pieces.map(c => c.zApex));
+    const maxZ = Math.max(...pieces.map(c => c.zMax ?? c.zApex));
     if (maxZ > (pr.bedZ || 220)) warnings.push({ kind: 'warn', text: 'יש חלקים גבוהים מגובה ההדפסה של המדפסת.' });
     const big = pieces.filter(c => !fitsBed(c.fp.w + 2, c.fp.h + 2));
     if (big.length) warnings.push({ kind: 'warn', text: `${big.length} חלקים רחבים ממשטח ההדפסה.` });
@@ -929,19 +956,53 @@
       return [cx + (lx * ca - ly * sa) * f, cy + (lx * sa + ly * ca) * f];
     };
     const rm = Math.sqrt(Math.max(1, area(c.body)) / Math.PI);
-    const trunc = Math.max(0, Math.min(1, sh.truncate || 0)), tEnd = 1 - 0.55 * trunc;
+    // 0..1 keeps the original range (cut at 45% height at 1); up to 1.5 cuts lower still
+    const trunc = Math.max(0, Math.min(1.5, sh.truncate || 0)), tEnd = Math.max(0.15, 1 - 0.55 * trunc);
     const blendAt = tt => sh.smooth > 0 ? Math.pow(Math.min(1, tt / Math.max(0.05, 1.05 - sh.smooth)), 1.5) : 0;
+    const xf = (v, tt, ctr, sc, cr, sr, bl) => {
+      let dx = v[0] - cx, dy = v[1] - cy;
+      if (bl > 0) { const L = Math.hypot(dx, dy) || 1; dx += (dx / L * rm - dx) * bl; dy += (dy / L * rm - dy) * bl; }
+      dx *= sc; dy *= sc;
+      return [ctr[0] + dx * cr - dy * sr, ctr[1] + dx * sr + dy * cr];
+    };
     const section = (tt) => {
       const ctr = at(tt), sc = Math.pow(1 - tt, sh.profile), r = sh.twist * tt, cr = Math.cos(r), sr = Math.sin(r), bl = blendAt(tt);
-      return { ctr, sc, poly: c.body.map(v => {
-        let dx = v[0] - cx, dy = v[1] - cy;
-        if (bl > 0) { const L = Math.hypot(dx, dy) || 1; dx += (dx / L * rm - dx) * bl; dy += (dy / L * rm - dy) * bl; }
-        dx *= sc; dy *= sc;
-        return [ctr[0] + dx * cr - dy * sr, ctr[1] + dx * sr + dy * cr];
-      }) };
+      return { ctr, sc, poly: c.body.map(v => xf(v, tt, ctr, sc, cr, sr, bl)) };
     };
-    c.layers = []; c.tipFlat = false;
-    if (trunc > 0) {
+    const vAt = (v, tt) => { const r = sh.twist * tt; return xf(v, tt, at(tt), Math.pow(1 - tt, sh.profile), Math.cos(r), Math.sin(r), blendAt(tt)); };
+    const tilt = sh.cutTilt || 0;
+    c.layers = []; c.tipFlat = false; c.zMax = undefined;
+    if (trunc > 0 && Math.abs(tilt) > 1e-4) {
+      // tilted cut: a plane through the centre line at the cut height; every vertex column runs up
+      // until it meets that plane, so the layers lean with it and the top face is flat on the plane
+      const ctr = at(tEnd), zC = c.z0 + c.hb * tEnd, tn = Math.tan(tilt), d = sh.cutDir || [1, 0];
+      const zp = (x, y) => zC - tn * ((x - ctr[0]) * d[0] + (y - ctr[1]) * d[1]);
+      const T = c.body.map(v => {
+        const f = tt => { const q = vAt(v, tt); return c.z0 + c.hb * tt - zp(q[0], q[1]); };
+        if (f(0.97) <= 0) return 0.97;
+        if (f(0.06) >= 0) return 0.06;
+        let lo = 0.06, hi = 0.97;
+        for (let it = 0; it < 22; it++) { const mid = (lo + hi) / 2; if (f(mid) < 0) lo = mid; else hi = mid; }
+        return (lo + hi) / 2;
+      });
+      const push = (poly, zv) => c.layers.push({ z: Math.max(...zv), zLo: Math.min(...zv), zv, poly });
+      for (let k = 1; k <= N; k++) {
+        const ts = T.map(t => t * k / N);
+        push(c.body.map((v, i) => vAt(v, ts[i])), ts.map(t => c.z0 + c.hb * t));
+      }
+      const last = c.layers[c.layers.length - 1];
+      if ((sh.dome || 0) > 0) {
+        const rL = rm * Math.pow(1 - tEnd, sh.profile), h = sh.dome * rL * 0.9, M = 6;
+        for (let j = 1; j < M; j++) {
+          const th = j / M * Math.PI / 2, k = Math.cos(th);
+          const poly = last.poly.map(v => [ctr[0] + (v[0] - ctr[0]) * k, ctr[1] + (v[1] - ctr[1]) * k]);
+          // follow the plane from the real top ring (it can sit above the plane where a column was clamped)
+          push(poly, poly.map((q, i) => last.zv[i] + zp(q[0], q[1]) - zp(last.poly[i][0], last.poly[i][1]) + h * Math.sin(th)));
+        }
+        c.apex = ctr; c.zApex = zC + h;
+      } else { c.apex = ctr; c.zApex = zC; c.tipFlat = true; }
+      c.zMax = Math.max(c.zApex, ...c.layers.map(l => l.z));
+    } else if (trunc > 0) {
       let last = null;
       for (let k = 1; k <= N; k++) { const tt = tEnd * k / N; last = section(tt); c.layers.push({ z: c.z0 + c.hb * tt, poly: last.poly }); }
       const zTop = c.z0 + c.hb * tEnd;
@@ -976,7 +1037,7 @@
   }
   function rings3(c) {
     const R = [c.body.map(v => [v[0], v[1], c.z0])];
-    c.layers.forEach(l => R.push(l.poly.map(v => [v[0], v[1], l.z])));
+    c.layers.forEach(l => R.push(l.poly.map((v, i) => [v[0], v[1], l.zv ? l.zv[i] : l.z])));
     return R;
   }
   function triBad(p, q, r, lim) {
@@ -995,7 +1056,7 @@
     for (const l of (c.layers || [])) {
       if (prevZ >= zNeed) break;
       if (!c.pocketWall.every(q => inside(l.poly, q))) return false;
-      prevZ = l.z;
+      prevZ = l.zLo ?? l.z;
     }
     return true;
   }
@@ -1021,7 +1082,7 @@
   }
   function collides(c, gap) {
     const N = c.layers.length, samples = [[c.apex[0], c.apex[1], c.zApex]];
-    for (const k of [Math.floor(N / 3), Math.floor(2 * N / 3), N - 1]) { const l = c.layers[k]; if (l) l.poly.forEach(v => samples.push([v[0], v[1], l.z])); }
+    for (const k of [Math.floor(N / 3), Math.floor(2 * N / 3), N - 1]) { const l = c.layers[k]; if (l) l.poly.forEach((v, i) => samples.push([v[0], v[1], l.zv ? l.zv[i] : l.z])); }
     const clearance = Math.max(0.6, gap);
     for (const s of samples) {
       if (inside(c.body, s)) continue;
@@ -1159,7 +1220,7 @@
       if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
       m.wall(r0, r1); m.wall(r1, prev);
     }
-    for (const l of (c.layers || [])) { const r = m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
+    for (const l of (c.layers || [])) { const r = l.zv ? l.poly.map((p, i) => m.pt(p[0], p[1], l.zv[i])) : m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
     if (c.tipFlat) { m.capUp(prev); return m; }
     const a = m.pt(c.apex[0], c.apex[1], c.zApex);
     for (let i = 0; i < prev.length; i++) m.tri(prev[i], prev[(i + 1) % prev.length], a);
