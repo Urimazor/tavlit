@@ -20,6 +20,7 @@ function normalize(s) {
   for (const k of Object.keys(base)) if (typeof base[k] === 'object' && !Array.isArray(base[k])) s[k] = Object.assign({}, base[k], s[k] || {});
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
   s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
+  if (s.piece.cutOn === undefined) s.piece.cutOn = s.piece.cutTilt > 0;   // designs saved before the switch keep their look
   s.frame = Object.assign({ joint: 9, jointClr: 0.1, knobW: 5 }, s.frame);
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
   if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; s.fitCal = 1; }
@@ -65,7 +66,7 @@ function slider(label, hint, path, min, max, step, unit = '', opts = {}) {
     let x = parseFloat(val); if (!isFinite(x)) return;
     x = Math.max(opts.hardMin ?? -Infinity, Math.min(opts.hardMax ?? Infinity, x));
     setP(path, x); num.value = x; rng.value = x; opts.onChange?.(x);
-    schedule(); if (fin) { commit(); opts.onCommit?.(); }
+    schedule(!fin); if (fin) { commit(); opts.onCommit?.(); }
   };
   if (!opts.virtual) {
     rng.addEventListener('input', () => apply(rng.value, false));
@@ -153,12 +154,12 @@ function renderPanel() {
     slider('התמזגות לצורה אחת', 'הפאות של הבסיס נמסות בהדרגה לצורה עגולה וחלקה כלפי מעלה', 'piece.smooth', 0, 1, 0.05, ''),
     slider('קיטום', '0 = שפיץ מלא, 1 = קטום נמוך, 1.5 = קטום נמוך מאוד', 'piece.truncate', 0, 1.5, 0.05, '', { onCommit: () => renderPanel() }),
     pc.truncate > 0 ? slider('כיפתיות', '0 = חיתוך ישר, 1 = כיפה מעוגלת', 'piece.dome', 0, 1, 0.05, '') : null,
-    pc.truncate > 0 ? el('div', { class: 'field-label' }, 'זווית הקיטום') : null,
-    pc.truncate > 0 ? el('p', { class: 'hint' }, 'במקום חיתוך מקביל לקיר, משטח החיתוך נוטה ופונה לכיוון מסוים. הכיוון יכול לבוא מנקודות התנועה (מערבולת, מגנט, זרם), מהמרכז, מספירלה או משיפוע פני השטח. לכל נקודת תנועה אפשר גם להוסיף זווית משלה.') : null,
-    pc.truncate > 0 ? slider('זווית קיטום', '0 = אופקי, מקביל לקיר', 'piece.cutTilt', 0, 75, 1, '°') : null,
-    pc.truncate > 0 ? chips('מה קובע לאן המשטח פונה', 'piece.cutBy', CUTBY) : null,
-    pc.truncate > 0 ? slider(pc.cutBy === 'fixed' ? 'כיוון' : 'סיבוב הכיוון', pc.cutBy === 'fixed' ? 'לאן פונה המשטח החתוך' : '180 = הפוך, 90 = לרוחב', 'piece.cutAngle', -180, 180, 1, '°') : null,
-    pc.truncate > 0 && pc.cutBy !== 'fixed' ? slider('זווית לפי עוצמה', '0 = אותה זווית בכל הלוח, 1 = הזווית גדלה איפה שההשפעה חזקה', 'piece.cutVary', 0, 1, 0.05, '') : null
+    pc.truncate > 0 ? chips('זווית הקיטום', 'piece.cutOn', [[false, 'כבויה (מקביל לקיר)'], [true, 'פעילה']]) : null,
+    pc.truncate > 0 && pc.cutOn ? el('p', { class: 'hint' }, 'משטח החיתוך נוטה ופונה לכיוון מסוים. הכיוון יכול לבוא מנקודות התנועה (מערבולת, מגנט, זרם), מהמרכז, מספירלה או משיפוע פני השטח. לכל נקודת תנועה אפשר גם להוסיף זווית משלה.') : null,
+    pc.truncate > 0 && pc.cutOn ? slider('זווית קיטום', '0 = אופקי, מקביל לקיר', 'piece.cutTilt', 0, 75, 1, '°') : null,
+    pc.truncate > 0 && pc.cutOn ? chips('מה קובע לאן המשטח פונה', 'piece.cutBy', CUTBY) : null,
+    pc.truncate > 0 && pc.cutOn ? slider(pc.cutBy === 'fixed' ? 'כיוון' : 'סיבוב הכיוון', pc.cutBy === 'fixed' ? 'לאן פונה המשטח החתוך' : '180 = הפוך, 90 = לרוחב', 'piece.cutAngle', -180, 180, 1, '°') : null,
+    pc.truncate > 0 && pc.cutOn && pc.cutBy !== 'fixed' ? slider('זווית לפי עוצמה', '0 = אותה זווית בכל הלוח, 1 = הזווית גדלה איפה שההשפעה חזקה', 'piece.cutVary', 0, 1, 0.05, '') : null
   ]));
 
   // 5 movement
@@ -182,7 +183,7 @@ function renderPanel() {
     p.type === 'current' ? slider('כיוון', '', `move.points.${selPoint}.angle`, -180, 180, 1, '°') : null,
     slider('קימור נוסף', 'לחלקים באזור הנקודה', `move.points.${selPoint}.curve`, -1, 1.5, 0.05, ''),
     slider('סחרור נוסף', 'לחלקים באזור הנקודה', `move.points.${selPoint}.spiral`, -180, 180, 1, '°'),
-    slider('זווית קיטום נוספת', 'לחלקים קטומים באזור הנקודה', `move.points.${selPoint}.cut`, -60, 60, 1, '°'),
+    s.piece.truncate > 0 && s.piece.cutOn ? slider('זווית קיטום נוספת', 'לחלקים קטומים באזור הנקודה', `move.points.${selPoint}.cut`, -60, 60, 1, '°') : null,
     slider('רדיוס', 'השפעה מלאה', `move.points.${selPoint}.radius`, 0, R, 1, 'מ"מ'),
     slider('דעיכה', 'עד שההשפעה נעלמת', `move.points.${selPoint}.fade`, 1, R * 1.5, 1, 'מ"מ'),
     slider('מיקום אופקי', '', `move.points.${selPoint}.x`, -s.shape.w / 2, s.shape.w / 2, 1, 'מ"מ'),
@@ -300,9 +301,9 @@ function bindPlan(cv) {
     const [px, py] = pos(e), [x, y] = planXf().toMm(px, py), s = state.shape;
     const p = state.move.points[drag];
     p.x = Math.round(Math.max(-s.w / 2, Math.min(s.w / 2, x))); p.y = Math.round(Math.max(-s.h / 2, Math.min(s.h / 2, y)));
-    drawPlan(); schedule();
+    drawPlan(); schedule(true);
   });
-  const end = () => { if (drag >= 0) { drag = -1; commit(); renderPanel(); } };
+  const end = () => { if (drag >= 0) { drag = -1; commit(); renderPanel(); schedule(); } };
   cv.addEventListener('pointerup', end); cv.addEventListener('pointercancel', end);
 }
 function cssVar(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
@@ -318,7 +319,7 @@ function drawPlan() {
     for (const c of model.pieces) { path(c.opening); ctx.fillStyle = state.color.bands[c.band]; ctx.globalAlpha = 0.28; ctx.fill(); ctx.globalAlpha = 1; }
     ctx.strokeStyle = inkc; ctx.lineWidth = 1.6;
     for (const c of model.pieces) {
-      const [x0, y0] = X.toPx(c.c[0], c.c[1]), [x1, y1] = X.toPx(c.apex[0], c.apex[1]);
+      const [x0, y0] = X.toPx(c.c[0], c.c[1]), tp = c.tip || c.apex, [x1, y1] = X.toPx(tp[0], tp[1]);
       ctx.beginPath(); ctx.moveTo(x0, y0); ctx.lineTo(x1, y1); ctx.stroke();
       ctx.beginPath(); ctx.arc(x1, y1, 2.2, 0, Math.PI * 2); ctx.fillStyle = inkc; ctx.fill();
     }
@@ -406,10 +407,12 @@ controls.addEventListener('change', invalidate);
 
 // ---------- rebuild pipeline ----------
 let timer = 0;
-function schedule() { clearTimeout(timer); $('#busy').hidden = false; timer = setTimeout(rebuild, 70); }
-function rebuild() {
+// while a slider or point is being dragged, build a quick preview (no keyholes = one pass instead of two);
+// the full build runs when the drag ends
+function schedule(draft) { clearTimeout(timer); $('#busy').hidden = false; timer = setTimeout(() => rebuild(draft === true), draft === true ? 30 : 70); }
+function rebuild(draft) {
   const t0 = performance.now();
-  try { model = E.build(state); buildError = null; }
+  try { model = E.build(state, false, { draft: draft === true }); model.draft = draft === true; buildError = null; }
   catch (e) { buildError = e.message || String(e); console.warn(e); }
   $('#busy').hidden = true;
   if (!buildError) { update3D(); drawPlan(); if (!$('#viewmap').hidden) drawMap(); }
@@ -464,6 +467,7 @@ async function offerFile(filename, blob) {
 }
 const slug = s => (s || 'panel').replace(/[^\w֐-׿-]+/g, '-').replace(/^-|-$/g, '') || 'panel';
 $('#kitBtn').addEventListener('click', async () => {
+  if (model && model.draft) { clearTimeout(timer); rebuild(false); }
   if (!model) return;
   const btn = $('#kitBtn'); btn.disabled = true; const old = btn.innerHTML; btn.lastChild.textContent = 'מכין קבצים…';
   try {

@@ -51,6 +51,23 @@
     }
     return c;
   }
+  // same ray casting as inside(), but the edge crossings of each horizontal line are kept per polygon,
+  // so many tests on the same y (the keyhole search samples a grid) cost a couple of compares each
+  function insideY(p, x, y) {
+    let m = p._yc; if (!m) m = p._yc = new Map();
+    let xs = m.get(y);
+    if (!xs) {
+      xs = [];
+      for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+        const a = p[i], b = p[j];
+        if ((a[1] > y) !== (b[1] > y)) xs.push((b[0] - a[0]) * (y - a[1]) / (b[1] - a[1]) + a[0]);
+      }
+      m.set(y, xs);
+    }
+    let c = false;
+    for (let k = 0; k < xs.length; k++) if (x < xs[k]) c = !c;
+    return c;
+  }
   // Sutherland–Hodgman: clip subject by convex CCW clip polygon
   function clipConvex(subject, clip) {
     let out = subject;
@@ -359,7 +376,9 @@
   function smooth(t) { t = Math.max(0, Math.min(1, t)); return t * t * (3 - 2 * t); }
 
   // ---------- main build ----------
-  function build(st, noHang) {
+  // opts.draft: quick preview while a slider is dragged (no keyholes, so no second pass)
+  function build(st, noHang, opts) {
+    if (opts && opts.draft) noHang = true;
     const warnings = [];
     let fr = st.frame;
     const pr = st.print;
@@ -567,8 +586,8 @@
           const contLo = common(sectionsUpTo(pocketLoTop + 0.3)), contHi = common(sectionsUpTo(pocketTop + pocketRoof));
           if (!contLo || !contHi) return null;
           const gLo = bwall + pc + pwall, gHi = 0.25 + pwall;
-          const test = (q, conts) => conts.every(cp => inside(cp, q));
-          const circleOk = (P, r, conts) => { for (let a = 0; a < 16; a++) if (!test([P[0] + r * Math.cos(a * Math.PI / 8), P[1] + r * Math.sin(a * Math.PI / 8)], conts)) return false; return true; };
+          const test = (x, y, conts) => { for (const cp of conts) if (!insideY(cp, x, y)) return false; return true; };
+          const circleOk = (P, r, conts) => { for (let a = 0; a < 16; a++) if (!test(P[0] + r * Math.cos(a * Math.PI / 8), P[1] + r * Math.sin(a * Math.PI / 8), conts)) return false; return true; };
           // arm k (1 = sideways, 2 = up/down) of length L fits at both levels of the hollow
           const armOk = (E, k, L, from = 0) => {
             const F = k === 1 ? [E[0] + sx * L, E[1]] : [E[0], E[1] + sy * L];
@@ -577,7 +596,7 @@
               if (!circleOk(F, r, conts)) return false;
               for (let d = Math.max(2, from); d < L; d += 2) {
                 const mx = E[0] + (F[0] - E[0]) * d / L, my = E[1] + (F[1] - E[1]) * d / L;
-                for (const sg of [-1, 1]) if (!test(k === 1 ? [mx, my + sg * r] : [mx + sg * r, my], conts)) return false;
+                for (let sg = -1; sg <= 1; sg += 2) if (!(k === 1 ? test(mx, my + sg * r, conts) : test(mx + sg * r, my, conts))) return false;
               }
             }
             return true;
@@ -835,7 +854,7 @@
     });
     // angle of the truncation cut: 0 = parallel to the wall; the cut face turns toward a direction
     // given by the lean field, the centre, a spiral, the slope of the surface, or a fixed heading
-    if ((ps.truncate || 0) > 0) {
+    if ((ps.truncate || 0) > 0 && (ps.cutOn ?? (ps.cutTilt > 0))) {
       const by = ps.cutBy || 'field', off = (ps.cutAngle || 0) * Math.PI / 180, vary = Math.max(0, Math.min(1, ps.cutVary || 0));
       const W2 = Math.max(1, st.shape.w / 2), H2 = Math.max(1, st.shape.h / 2);
       let gmax = 0;
@@ -972,6 +991,7 @@
     const vAt = (v, tt) => { const r = sh.twist * tt; return xf(v, tt, at(tt), Math.pow(1 - tt, sh.profile), Math.cos(r), Math.sin(r), blendAt(tt)); };
     const tilt = sh.cutTilt || 0;
     c.layers = []; c.tipFlat = false; c.zMax = undefined;
+    c.tip = at(1);   // where the uncut tip would be: the plan arrows show this, so lean stays visible when cut
     if (trunc > 0 && Math.abs(tilt) > 1e-4) {
       // tilted cut: a plane through the centre line at the cut height; every vertex column runs up
       // until it meets that plane, so the layers lean with it and the top face is flat on the plane
@@ -1024,8 +1044,10 @@
       for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: c.z0 + c.hb * tt, poly: section(tt).poly }); }
       c.apex = at(1); c.zApex = c.z0 + c.hb;
     }
-    const pts = c.body.concat([c.apex]); c.layers.forEach(l => pts.push(...l.poly));
-    c.fp = bbox(pts);
+    let x0 = c.apex[0], x1 = x0, y0 = c.apex[1], y1 = y0;
+    const grow = poly => { for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } };
+    grow(c.body); for (const l of c.layers) grow(l.poly);
+    c.fp = { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
   }
   function subdivide(p, q) {
     if (q <= 1) return p;
@@ -1040,6 +1062,12 @@
     for (const q of p) { while (lo.length >= 2 && cr(lo[lo.length - 2], lo[lo.length - 1], q) <= 0) lo.pop(); lo.push(q); }
     for (let i = p.length - 1; i >= 0; i--) { const q = p[i]; while (up.length >= 2 && cr(up[up.length - 2], up[up.length - 1], q) <= 0) up.pop(); up.push(q); }
     return lo.slice(0, -1).concat(up.slice(0, -1));
+  }
+  function triBadXYZ(px, py, pz, qx, qy, qz, rx, ry, rz, lim) {
+    const ex = qx - px, ey = qy - py, ez = qz - pz, ax = rx - px, ay = ry - py, az = rz - pz;
+    const nx = ey * az - ez * ay, ny = ez * ax - ex * az, nz = ex * ay - ey * ax;
+    const L = Math.sqrt(nx * nx + ny * ny + nz * nz);
+    return L > 1e-9 && nz < lim * L;
   }
   function rings3(c) {
     const R = [c.body.map(v => [v[0], v[1], c.z0])];
@@ -1068,17 +1096,26 @@
   }
   // side faces must not overhang more than maxOv from vertical
   function overhangBad(c, maxOv) {
-    const lim = -Math.sin(maxOv), R = rings3(c), A = [c.apex[0], c.apex[1], c.zApex], n = c.body.length;
+    // reads the rings in place (no copies): this runs for every piece on every shrink step
+    const lim = -Math.sin(maxOv), Ls = c.layers, n = c.body.length, z0 = c.z0;
+    const P = k => k === 0 ? c.body : Ls[k - 1].poly;
+    const Z = (k, i) => { if (k === 0) return z0; const l = Ls[k - 1]; return l.zv ? l.zv[i] : l.z; };
     // the last few millimetres of a tip are too small to droop; only check sections wider than ~3 mm
-    let kmax = R.length - 1;
-    while (kmax > 1 && Math.sqrt(Math.abs(area(R[kmax].map(v => [v[0], v[1]])))) < 3) kmax--;
-    if (kmax < R.length - 1) R.length = kmax + 1;
-    for (let k = 0; k < R.length - 1; k++) for (let i = 0; i < n; i++) {
-      const j = (i + 1) % n, wv = c.layers[k] && c.layers[k].wv;
-      if (wv && Math.min(wv[i], wv[j]) < 3) continue;   // tilted cut: thin tip part of this column
-      if (triBad(R[k][i], R[k][j], R[k + 1][j], lim) || triBad(R[k][i], R[k + 1][j], R[k + 1][i], lim)) return true;
+    let kmax = Ls.length;
+    while (kmax > 1 && Math.sqrt(Math.abs(area(P(kmax)))) < 3) kmax--;
+    for (let k = 0; k < kmax; k++) {
+      const A = P(k), B = P(k + 1), wv = Ls[k] && Ls[k].wv;
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n;
+        if (wv && Math.min(wv[i], wv[j]) < 3) continue;   // tilted cut: thin tip part of this column
+        const ai = A[i], aj = A[j], bi = B[i], bj = B[j], zai = Z(k, i), zaj = Z(k, j), zbi = Z(k + 1, i), zbj = Z(k + 1, j);
+        if (triBadXYZ(ai[0], ai[1], zai, aj[0], aj[1], zaj, bj[0], bj[1], zbj, lim) || triBadXYZ(ai[0], ai[1], zai, bj[0], bj[1], zbj, bi[0], bi[1], zbi, lim)) return true;
+      }
     }
-    if (kmax === c.layers.length && !c.tipFlat) { const T = R[R.length - 1]; for (let i = 0; i < n; i++) if (triBad(T[i], T[(i + 1) % n], A, lim)) return true; }
+    if (kmax === Ls.length && !c.tipFlat) {
+      const T = P(kmax), ax = c.apex[0], ay = c.apex[1], az = c.zApex;
+      for (let i = 0; i < n; i++) { const j = (i + 1) % n; if (triBadXYZ(T[i][0], T[i][1], Z(kmax, i), T[j][0], T[j][1], Z(kmax, j), ax, ay, az, lim)) return true; }
+    }
     return false;
   }
   // approximate top of piece o above (x,y): highest section containing the point
