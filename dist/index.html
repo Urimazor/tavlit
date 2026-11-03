@@ -1052,7 +1052,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const usedTiles = tiles;
 
     // heights, lean and piece shape
-    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, st.piece || {});
+    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, foot: 0, footIn: 0 }, st.piece || {});
     // finer outline so the facets can melt into a round section higher up
     if (ps.smooth > 0) pieces.forEach(c => {
       const q = Math.max(1, Math.ceil(36 / c.body.length));
@@ -1093,12 +1093,21 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         delete c.cutRaw;
       });
     }
+    const footH = Math.max(0, Math.min(15, +ps.foot || 0)), footIn = Math.max(0, Math.min(5, +ps.footIn || 0));
     pieces.forEach(c => {
       let h = sf.minH + sf.depth * c.s;
       if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
       c.zr = 0; c.h = h; c.skirt = 0;
       c.hb = Math.max(2, h);
       c.z0 = t + c.chamfer;
+      // foot: every piece first rises the same straight band from the frame (and steps in a little),
+      // so tall and low pieces meet the base with the same groove; the shape above keeps its top height
+      c.foot = 0; c.base = c.body;
+      if (footH > 0) {
+        let fp = footIn > 0 ? inset(c.body, footIn, true) : c.body.slice();
+        if (!fp) { const cc = centroid(c.body), rr = Math.sqrt(Math.max(1, Math.abs(area(c.body))) / Math.PI), k = Math.max(0.5, 1 - footIn / rr); fp = c.body.map(v => [cc[0] + (v[0] - cc[0]) * k, cc[1] + (v[1] - cc[1]) * k]); }
+        c.foot = Math.min(footH, Math.max(0, c.hb - 2)); c.base = fp;
+      }
       c.lean = [c.f[0] * mv.lean * c.hb, c.f[1] * mv.lean * c.hb];
       c.scale = 1;
       setApex(c);
@@ -1182,6 +1191,8 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
   // optionally spiralling path
   function setApex(c) {
     const sh = c.shape, N = sh.layers;
+    // the loft starts on top of the foot band (if any); its height shrinks by the same amount
+    const body = c.base || c.body, foot = c.foot || 0, z0 = c.z0 + foot, hb = c.hb - foot;
     const lx = c.lean[0] * c.scale, ly = c.lean[1] * c.scale;
     const e = sh.curve >= 0 ? 1 + 2.5 * sh.curve : 1 / (1 - 1.2 * sh.curve);
     const cx = c.c[0], cy = c.c[1];
@@ -1189,7 +1200,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       const a = sh.spiral * tt, ca = Math.cos(a), sa = Math.sin(a), f = Math.pow(tt, e);
       return [cx + (lx * ca - ly * sa) * f, cy + (lx * sa + ly * ca) * f];
     };
-    const rm = Math.sqrt(Math.max(1, area(c.body)) / Math.PI);
+    const rm = Math.sqrt(Math.max(1, area(body)) / Math.PI);
     // 0..1 keeps the original range (cut at 45% height at 1); up to 1.5 cuts lower still
     const trunc = Math.max(0, Math.min(1.5, sh.truncate || 0)), tEnd = Math.max(0.15, 1 - 0.55 * trunc);
     const blendAt = tt => sh.smooth > 0 ? Math.pow(Math.min(1, tt / Math.max(0.05, 1.05 - sh.smooth)), 1.5) : 0;
@@ -1201,23 +1212,23 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     };
     const section = (tt) => {
       const ctr = at(tt), sc = Math.pow(1 - tt, sh.profile), r = sh.twist * tt, cr = Math.cos(r), sr = Math.sin(r), bl = blendAt(tt);
-      return { ctr, sc, poly: c.body.map(v => xf(v, tt, ctr, sc, cr, sr, bl)) };
+      return { ctr, sc, poly: body.map(v => xf(v, tt, ctr, sc, cr, sr, bl)) };
     };
     const vAt = (v, tt) => { const r = sh.twist * tt; return xf(v, tt, at(tt), Math.pow(1 - tt, sh.profile), Math.cos(r), Math.sin(r), blendAt(tt)); };
     const tilt = sh.cutTilt || 0;
-    c.layers = []; c.tipFlat = false; c.zMax = undefined;
+    c.layers = foot > 0 ? [{ z: z0, poly: body }] : []; c.tipFlat = false; c.zMax = undefined;
     c.tip = at(1);   // where the uncut tip would be: the plan arrows show this, so lean stays visible when cut
     if (trunc > 0 && Math.abs(tilt) > 1e-4) {
       // tilted cut: a plane through the centre line at the cut height; every vertex column runs up
       // until it meets that plane, so the layers lean with it and the top face is flat on the plane
       // the plane is hinged at the low edge of the cut section, so it only rises from the truncation height
       // and never dives into the base (that folded the walls and made pieces shrink)
-      const ctr = at(tEnd), zC = c.z0 + c.hb * tEnd, tn = Math.tan(Math.abs(tilt)), d0 = sh.cutDir || [1, 0], d = tilt < 0 ? [-d0[0], -d0[1]] : d0;
+      const ctr = at(tEnd), zC = z0 + hb * tEnd, tn = Math.tan(Math.abs(tilt)), d0 = sh.cutDir || [1, 0], d = tilt < 0 ? [-d0[0], -d0[1]] : d0;
       const proj = (x, y) => (x - ctr[0]) * d[0] + (y - ctr[1]) * d[1];
       const pMax = Math.max(...section(tEnd).poly.map(q => proj(q[0], q[1])));
       const zp = (x, y) => zC + tn * (pMax - proj(x, y));
-      const T = c.body.map(v => {
-        const f = tt => { const q = vAt(v, tt); return c.z0 + c.hb * tt - zp(q[0], q[1]); };
+      const T = body.map(v => {
+        const f = tt => { const q = vAt(v, tt); return z0 + hb * tt - zp(q[0], q[1]); };
         if (f(0.97) <= 0) return 0.97;
         if (f(0.06) >= 0) return 0.06;
         let lo = 0.06, hi = 0.97;
@@ -1226,10 +1237,10 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       });
       // wv: rough section width at each vertex, so the overhang check can skip the thin tip like it does for flat layers
       const push = (poly, zv, wv) => c.layers.push({ z: Math.max(...zv), zLo: Math.min(...zv), zv, wv, poly });
-      const bodyW = Math.sqrt(Math.max(1, Math.abs(area(c.body))));
+      const bodyW = Math.sqrt(Math.max(1, Math.abs(area(body))));
       for (let k = 1; k <= N; k++) {
         const ts = T.map(t => t * k / N);
-        push(c.body.map((v, i) => vAt(v, ts[i])), ts.map(t => c.z0 + c.hb * t), ts.map(t => bodyW * Math.pow(1 - t, sh.profile)));
+        push(body.map((v, i) => vAt(v, ts[i])), ts.map(t => z0 + hb * t), ts.map(t => bodyW * Math.pow(1 - t, sh.profile)));
       }
       const last = c.layers[c.layers.length - 1];
       if ((sh.dome || 0) > 0) {
@@ -1245,8 +1256,8 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       c.zMax = Math.max(c.zApex, ...c.layers.map(l => l.z));
     } else if (trunc > 0) {
       let last = null;
-      for (let k = 1; k <= N; k++) { const tt = tEnd * k / N; last = section(tt); c.layers.push({ z: c.z0 + c.hb * tt, poly: last.poly }); }
-      const zTop = c.z0 + c.hb * tEnd;
+      for (let k = 1; k <= N; k++) { const tt = tEnd * k / N; last = section(tt); c.layers.push({ z: z0 + hb * tt, poly: last.poly }); }
+      const zTop = z0 + hb * tEnd;
       if ((sh.dome || 0) > 0) {
         const rL = rm * last.sc, h = sh.dome * rL * 0.9, M = 6, ctr = last.ctr;
         for (let j = 1; j < M; j++) {
@@ -1256,8 +1267,8 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         c.apex = ctr; c.zApex = zTop + h;
       } else { c.apex = last.ctr; c.zApex = zTop; c.tipFlat = true; }
     } else {
-      for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: c.z0 + c.hb * tt, poly: section(tt).poly }); }
-      c.apex = at(1); c.zApex = c.z0 + c.hb;
+      for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: z0 + hb * tt, poly: section(tt).poly }); }
+      c.apex = at(1); c.zApex = z0 + hb;
     }
     let x0 = c.apex[0], x1 = x0, y0 = c.apex[1], y1 = y0;
     const grow = poly => { for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } };
@@ -1904,7 +1915,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
 (function (root) {
   const PRINT = { bedW: 250, bedH: 210, bedZ: 220, margin: 5, spacing: 3, overhang: 50 };
   const FRAME = { t: 3, rib: 2.4, clr: 0.05, gap: 0.4, color: '#85898c', joint: 9, knobW: 5, jointClr: 0.1, hang: { on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 } };
-  const PIECE = { curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, cutOn: false };
+  const PIECE = { curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, cutOn: false, foot: 2.5, footIn: 0.8 };
   const P = (o) => JSON.parse(JSON.stringify(Object.assign({ print: PRINT, frame: FRAME, piece: PIECE }, o)));
   const presets = [
     {
@@ -2024,7 +2035,7 @@ function normalize(s) {
   const base = clone(PR.presets[1].state);
   for (const k of Object.keys(base)) if (typeof base[k] === 'object' && !Array.isArray(base[k])) s[k] = Object.assign({}, base[k], s[k] || {});
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
-  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
+  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, foot: 2.5, footIn: 0.8 }, s.piece || {});
   if (s.piece.cutOn === undefined) s.piece.cutOn = s.piece.cutTilt > 0;   // designs saved before the switch keep their look
   s.frame = Object.assign({ joint: 9, jointClr: 0.1, knobW: 5 }, s.frame);
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
@@ -2156,6 +2167,8 @@ function renderPanel() {
     slider('סחרור', 'הקודקוד מסתובב בספירלה תוך כדי עלייה', 'piece.spiral', -180, 180, 1, '°'),
     slider('עובי', 'קטן = נפוח, גדול = דק וחד', 'piece.profile', 0.4, 2.5, 0.05, ''),
     slider('שכבות', 'יותר = עיקול חלק יותר', 'piece.layers', 3, 48, 1, ''),
+    slider('רגלית (גובה הכניסה לבסיס)', 'כל חלק עולה קודם פס ישר בגובה הזה מעל המסגרת, כך שגם חלקים נמוכים בשוליים וגם גבוהים במרכז נכנסים לבסיס באותו מרווח. 0 = כמו קודם', 'piece.foot', 0, 10, 0.5, ' מ"מ', { onCommit: () => renderPanel() }),
+    pc.foot > 0 ? slider('נסיגת הרגלית', 'כמה החלק נכנס פנימה בראש הרגלית: מרחיב את החריץ בין חלקים שכנים. 0 = דופן ישרה', 'piece.footIn', 0, 4, 0.1, ' מ"מ') : null,
     slider('התמזגות לצורה אחת', 'הפאות של הבסיס נמסות בהדרגה לצורה עגולה וחלקה כלפי מעלה', 'piece.smooth', 0, 1, 0.05, ''),
     slider('קיטום', '0 = שפיץ מלא, 1 = קטום נמוך, 1.5 = קטום נמוך מאוד', 'piece.truncate', 0, 1.5, 0.05, '', { onCommit: () => renderPanel() }),
     pc.truncate > 0 ? slider('כיפתיות', '0 = חיתוך ישר, 1 = כיפה מעוגלת', 'piece.dome', 0, 1, 0.05, '') : null,
