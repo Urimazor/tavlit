@@ -1216,10 +1216,13 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) (grid.get(key(gi + i, gj + j)) || []).forEach(o => { if (o !== c) c.nb.push(o); });
     });
     const maxOv = (pr.overhang ?? 45) * Math.PI / 180;
+    // hidden outer frame: no piece may lean or bulge out past the panel's edge, or the edge line breaks there
+    const lineOut = hideRim ? (inset(outer, -0.05) || outer) : null;
+    const pokesOut = c => !!lineOut && (!inside(lineOut, c.apex) || c.layers.some(l => l.poly.some(q => !inside(lineOut, q))));
     for (let pass = 0; pass < 3; pass++) {
       for (const c of pieces) {
         let guard = 0;
-        while (guard++ < 12 && (overhangBad(c, maxOv) || collides(c, gap))) {
+        while (guard++ < 12 && (overhangBad(c, maxOv) || collides(c, gap) || pokesOut(c))) {
           c.scale = Math.max(0, c.scale - 0.1);
           if (c.scale === 0 && c.shape.twist) c.shape.twist *= 0.5;
           setApex(c);
@@ -1264,9 +1267,30 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       });
       if (info.length && isFinite(dmin)) {
         dmin = Math.max(0.3, dmin);
+        const edgeLine = inset(outer, -dmin) || outer;
+        // distance along a ray from a point inside a convex outline to where it leaves it
+        const rayExit = (poly, p, u) => {
+          let best = null;
+          for (let k = 0; k < poly.length; k++) {
+            const a = poly[k], b = poly[(k + 1) % poly.length], ex = b[0] - a[0], ey = b[1] - a[1];
+            const den = u[0] * ey - u[1] * ex;
+            if (Math.abs(den) < 1e-12) continue;
+            const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den, w = ((a[0] - p[0]) * u[1] - (a[1] - p[1]) * u[0]) / den;
+            if (t > 0 && w >= -1e-9 && w <= 1 + 1e-9 && (best === null || t < best)) best = t;
+          }
+          return best;
+        };
         info.forEach(({ c, out, reach }) => {
           const B = c.body, shift = shiftFor(B, out), zt = c.z0 - 0.01;
           const Bn = shift(reach.map(r => r === null ? dmin : Math.max(r, dmin))), Bc = shift(out.map(() => dmin)), Ci = shift(out.map(() => -0.3));
+          // the body's outer edges sit only roughly on the outline, so slide each moved vertex along its own path
+          // until it lands exactly on the one edge line (also at the panel's corners)
+          Bc.forEach((q, i) => {
+            const v = B[i], ux = q[0] - v[0], uy = q[1] - v[1], L = Math.hypot(ux, uy);
+            if (L < 1e-6) return;
+            const hit = rayExit(edgeLine, v, [ux / L, uy / L]);
+            if (hit !== null && hit < L + 3 * c.z0) { Bc[i] = [v[0] + ux / L * hit, v[1] + uy / L * hit]; }
+          });
           if (Bc.some((q, i) => Math.hypot(q[0] - B[i][0], q[1] - B[i][1]) > 6 * c.z0)) return;   // a very sharp corner: keep the plain skirt
           // height where each vertex's sloped edge meets the line; below it the piece drops upright to the wall
           const zc = B.map((v, i) => { const ln = Math.hypot(Bn[i][0] - v[0], Bn[i][1] - v[1]), lc = Math.hypot(Bc[i][0] - v[0], Bc[i][1] - v[1]); return ln < 1e-6 ? 0.2 : Math.min(zt - 0.2, Math.max(0.2, zt * (1 - lc / ln))); });
