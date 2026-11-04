@@ -837,7 +837,7 @@
     const usedTiles = tiles;
 
     // heights, lean and piece shape
-    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, foot: 0, footIn: 0 }, st.piece || {});
+    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, foot: 0, footIn: 0, upright: 0 }, st.piece || {});
     // finer outline so the facets can melt into a round section higher up
     if (ps.smooth > 0) pieces.forEach(c => {
       const q = Math.max(1, Math.ceil(36 / c.body.length));
@@ -849,7 +849,7 @@
       c.f = fieldAt(mv.points, c.c[0], c.c[1]);
       c.fm = Math.hypot(c.f[0], c.f[1]); fmax = Math.max(fmax, c.fm);
       const md = modsAt(mv.points, c.c[0], c.c[1]);
-      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, truncate: ps.truncate, dome: ps.dome, cutTilt: 0, cutDir: [1, 0] };
+      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, upright: ps.upright, truncate: ps.truncate, dome: ps.dome, cutTilt: 0, cutDir: [1, 0] };
       c.cutAdd = md.cut;
     });
     // angle of the truncation cut: 0 = parallel to the wall; the cut face turns toward a direction
@@ -979,7 +979,10 @@
     // the loft starts on top of the foot band (if any); its height shrinks by the same amount
     const body = c.base || c.body, foot = c.foot || 0, z0 = c.z0 + foot, hb = c.hb - foot;
     const lx = c.lean[0] * c.scale, ly = c.lean[1] * c.scale;
-    const e = sh.curve >= 0 ? 1 + 2.5 * sh.curve : 1 / (1 - 1.2 * sh.curve);
+    // upright: the lean path leaves the frame vertically (curved start) instead of tilting the whole piece
+    // from its base, which laid the trailing side of strongly leaning pieces down on the frame
+    const up = Math.max(0, Math.min(1, +sh.upright || 0));
+    const e = sh.curve >= 0 ? Math.max(1 + 1.5 * up, 1 + 2.5 * sh.curve) : 1 / (1 - 1.2 * sh.curve);   // a negative curve is a deliberate choice: kept
     const cx = c.c[0], cy = c.c[1];
     const at = (tt) => {
       const a = sh.spiral * tt, ca = Math.cos(a), sa = Math.sin(a), f = Math.pow(tt, e);
