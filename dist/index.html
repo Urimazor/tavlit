@@ -606,7 +606,14 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       baseShape = new Map(base.pieces.map(c => [c.id, { collar: c.collar, layers: c.layers || [], z0: c.z0, zApex: c.zApex }]));
     }
     const outer = makeShape(st.shape);
-    const rim = Math.max(st.shape.rim, fr.rib / 2 + 0.5);
+    // hidden outer frame: the pieces along the edge grow out to the panel's edge and drop down to the wall
+    // as a thin skirt, so the narrow outer rail of the frame sits hidden inside them
+    const hideRim = !!fr.hideRim;
+    const skW = 1.6, skClr = fr.clr + 0.15, railW = Math.max(fr.rib, 2.4);
+    const rim = hideRim ? skW + skClr + railW - fr.rib / 2 : Math.max(st.shape.rim, fr.rib / 2 + 0.5);
+    const frameOuter = hideRim ? inset(outer, skW + skClr) : outer;   // the frame stops short of the skirts
+    const skirtIn = hideRim ? inset(outer, skW) : null;
+    if (hideRim && (!frameOuter || !skirtIn)) throw new Error('הפאנל קטן מדי להסתרת המסגרת');
     const region = inset(outer, rim);
     if (!region) throw new Error('המסגרת החיצונית רחבה מדי ביחס לגודל');
     const tz = tessellate(st.tess, region, outer);
@@ -631,10 +638,15 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const jointHalf = Math.max(half, (fr.joint ?? 9) / 2);
     const bevel = Math.max(0.6, half + clr - gap / 2);   // 45°: rise = the step from the opening to the visible body
     let maxExt = 0;
+    // distance from a point to the inner edge of the outer frame
+    const edgeDist = m => { let dd = Infinity; for (let k = 0; k < region.length; k++) { const p1 = region[k], p2 = region[(k + 1) % region.length], ex = p2[0] - p1[0], ey = p2[1] - p1[1], l2 = ex * ex + ey * ey || 1, tt = Math.max(0, Math.min(1, ((m[0] - p1[0]) * ex + (m[1] - p1[1]) * ey) / l2)); dd = Math.min(dd, Math.hypot(m[0] - p1[0] - ex * tt, m[1] - p1[1] - ey * tt)); } return dd; };
+    const onEdge = c => c.poly.some(v => edgeDist(v) < 1 || !inside(region, v));
     cells.forEach((c, i) => {
       c.id = i; c.c = centroid(c.poly);
       c.bb = bbox(c.poly); c.tbb = bbox(c.tpoly); maxExt = Math.max(maxExt, c.tbb.w, c.tbb.h);
       c.kind = c.area >= minFrac * tz.nominal ? 'piece' : 'blank';
+      // with the outer frame hidden, a small cut-off cell on the edge still gets a piece, or the frame would show there
+      if (hideRim && c.kind === 'blank' && onEdge(c)) c.kind = 'piece';
     });
     rimCells.forEach(r => r.tbb = bbox(r.tpoly));
 
@@ -702,9 +714,36 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         const ds = c.seam.map(o => o ? jointHalf : half);
         const opening = inset(c.poly, ds, concave);
         const collar = opening && inset(opening, clr, concave);
-        const body = inset(c.poly, gap / 2, concave);
+        let bodyDs = gap / 2, outEdge = null;
+        if (hideRim) {
+          // edges on the panel's edge: the body reaches out to the outline (over the outer rail)
+          outEdge = c.poly.map((a, i) => {
+            const b = c.poly[(i + 1) % c.poly.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+            const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L, m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+            // no other cell across this edge: it faces the outer frame
+            if (edgeDist(m) > 3) return null;
+            const q = [m[0] + nx * 0.6, m[1] + ny * 0.6];
+            if (inside(region, q) && cells.some(o => o !== c && o.mergedInto !== c && o.kind !== 'merged' && q[0] >= o.bb.x0 && q[0] <= o.bb.x1 && q[1] >= o.bb.y0 && q[1] <= o.bb.y1 && inside(o.poly, q))) return null;
+            return edgeDist(m);   // a simplified edge can cut inside the region: reach the outline anyway
+          });
+          if (outEdge.some(v => v !== null)) bodyDs = outEdge.map(v => v === null ? gap / 2 : -(rim + v)); else outEdge = null;
+        }
+        const body = inset(c.poly, bodyDs, concave);
         if (opening && collar && body && area(collar) > 12) {
-          c.opening = opening; c.collar = collar; c.body = body;
+          c.opening = opening; c.collar = collar; c.body = body; c.wrap = null;
+          if (outEdge) {
+            // the skirt: the band of the body outside the outer rail, from the wall up to the body
+            // the clipping library can trip on nearly touching edges: retry on a slightly shifted grid
+            for (const sh of [0, 0.0007, -0.0013]) {
+              try {
+                const rg = q => { const r = q.map(v => [Math.round((v[0] + sh) * 1000) / 1000, Math.round((v[1] - sh) * 1000) / 1000]); r.push(r[0]); return r; };
+                let g = root.polygonClipping.intersection([rg(body)], [rg(outer), rg(skirtIn).reverse()]);
+                g = g.filter(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.5);
+                if (g.length) c.wrap = g;
+                break;
+              } catch (e) { c.wrap = null; }
+            }
+          }
           // the same small 45° bevel from the frame on every piece. Next to a tile seam the rib is wider than the
           // bevel reaches, so there the piece's underside rests flat on the rib (c.ledge) and the bevel starts
           // from that ledge; before, those pieces got a 3-6 mm tall bevel and sat higher than their neighbours
@@ -720,8 +759,46 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       if (c.kind !== 'piece') return;
       const orig = c.poly;
       if (!shapeCell(c, orig)) { c.kind = 'blank'; c.poly = orig; c.seam = seamFlags(c); }
-      c.c = centroid(c.poly);
+      c.c = centroid(c.kind === 'piece' && c.wrap ? c.body : c.poly);   // an edge piece rises from the middle of its wider base
     });
+    if (hideRim) {
+      // a cut-off cell on the edge too small for a piece of its own joins the neighbouring piece (same frame tile),
+      // so the pieces still reach the panel's edge there and the frame stays hidden
+      const keys = ['poly', 'seam', 'opening', 'collar', 'body', 'wrap', 'chamfer', 'ledge', 'c'];
+      const grow = p => { const cc = centroid(p); return p.map(v => [cc[0] + (v[0] - cc[0]) * 1.002, cc[1] + (v[1] - cc[1]) * 1.002]); };
+      const rg = p => { const r = q3(p); r.push(r[0]); return r; };
+      for (const b of cells) {
+        if (b.kind !== 'blank' || !onEdge(b)) continue;
+        const share = new Map();
+        for (let i = 0; i < b.poly.length; i++) {
+          const a = b.poly[i], e = b.poly[(i + 1) % b.poly.length], L = Math.hypot(e[0] - a[0], e[1] - a[1]) || 1;
+          const pt = [(a[0] + e[0]) / 2 + (e[1] - a[1]) / L * 1.0, (a[1] + e[1]) / 2 - (e[0] - a[0]) / L * 1.0];
+          const o = cells.find(c => c.kind === 'piece' && c.tile === b.tile && pt[0] >= c.bb.x0 - 1 && pt[0] <= c.bb.x1 + 1 && pt[1] >= c.bb.y0 - 1 && pt[1] <= c.bb.y1 + 1 && inside(c.poly, pt));
+          if (o) share.set(o, (share.get(o) || 0) + L);
+        }
+        const nbs = [...share.entries()].sort((x, y) => y[1] - x[1]).map(x => x[0]);
+        for (const o of nbs) {
+          let mp;
+          try {
+            const u = root.polygonClipping.union([rg(grow(o.poly))], [rg(grow(b.poly))]);
+            if (u.length !== 1) continue;
+            mp = simplify(ccw(u[0][0].slice(0, -1)), minEdge);
+          } catch (e) { continue; }
+          if (mp.length < 3) continue;
+          const save = {}; keys.forEach(k => save[k] = o[k]);
+          o.poly = mp; o.seam = seamFlags(o);
+          b.kind = 'merged'; b.mergedInto = o;
+          if (shapeCell(o, mp, true)) {
+            o.joinedRim = (o.joinedRim || 0) + 1;
+            o.area = area(o.poly); o.bb = bbox(o.poly);
+            o.c = centroid(o.wrap ? o.body : o.poly);
+            break;
+          }
+          keys.forEach(k => o[k] = save[k]);
+          b.kind = 'blank'; delete b.mergedInto;
+        }
+      }
+    }
     const pieces = cells.filter(c => c.kind === 'piece');
     if (!pieces.length) throw new Error('אין אף תא שגדול מספיק לחלק. הגדל את גודל התא או את הפאנל.');
 
@@ -915,7 +992,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         if (op.members.length > 1) {
           // join the two pieces: the first takes the joined outline, the second disappears
           const [A, B] = op.members;
-          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, chamfer: c.chamfer, ledge: c.ledge, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
+          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, wrap: c.wrap, chamfer: c.chamfer, ledge: c.ledge, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
           B.kind = 'merged'; B.mergedInto = A;
           pieces.splice(pieces.indexOf(B), 1);
           c = A;
@@ -1018,6 +1095,14 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     if (!PC) throw new Error('polygon-clipping not loaded');
     const ringOf = p => { const r = q3(p); r.push(r[0]); return r; };
     const holesG = pieces.map(c => [ringOf(c.opening)]);
+    // hidden outer frame: the frame stops short of the skirts, but reaches the outline where no piece covers the edge
+    let frameClip = [ringOf(outer)];
+    if (hideRim) {
+      // room for each skirt plus its clearance; the frame keeps everything else, out to the outline
+      const zones = pieces.filter(c => c.wrap).map(c => [ringOf(inset(c.body, -skClr, true) || c.body)]);
+      try { frameClip = PC.difference([ringOf(outer)], PC.difference(PC.union(...zones), [ringOf(frameOuter)])); }
+      catch (e) { frameClip = [ringOf(frameOuter)]; }
+    }
     const tiles = []; let islandTiles = 0; const islandPolys = [];
     for (let id = 0; id < P.nx * P.ny; id++) {
       const mine = allT.filter(c => c.tile === id);
@@ -1028,7 +1113,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         const grow = c => { const cc = centroid(c.tpoly), k = 1 + 0.1 / Math.max(2, Math.min(c.tbb.w, c.tbb.h) / 2); return c.tpoly.map(v => [cc[0] + (v[0] - cc[0]) * k, cc[1] + (v[1] - cc[1]) * k]); };
         g = PC.union(...mine.map(c => [ringOf(grow(c))]), ...knobs.filter(k => k.owner === id).map(k => [ringOf(k.poly)]));
         g = g.map(poly => [poly[0]]); // close hairline gaps between neighbouring cells
-        g = PC.intersection(g, [ringOf(outer)]);
+        g = PC.intersection(g, frameClip);
         const cut = knobs.filter(k => k.target === id).map(k => [ringOf(k.socket)]).concat(holesG);
         g = PC.difference(g, ...cut);
       } catch (e) { throw new Error('חישוב המסגרת נכשל: ' + e.message); }
@@ -1151,6 +1236,10 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       const bare = [...pairs.values()].filter(v => v === 0).length;
       if (bare) warnings.push({ kind: 'warn', text: `${bare} חיבורים בין אריחים נשארו בלי מחבר זנב יונה, כי לא היה מקום בטוח לשים אותו. הגדל את "רוחב צלע בחיבור" או את גודל התא.` });
     }
+    if (hideRim) {
+      const openEdge = cells.filter(c => c.kind === 'blank' && onEdge(c)).length + rimCells.filter(r => Math.abs(area(r.tpoly)) > 4).length;
+      if (openEdge) warnings.push({ kind: 'info', text: `המסגרת ההיקפית מוסתרת, אבל ${openEdge} מקומות בשוליים קטנים מדי לחלק, ושם המסגרת נראית. אפשר לשנות מעט את גודל התא או את גודל הפאנל.` });
+    }
     if (shortened) warnings.push({ kind: 'info', text: `${shortened} קודקודים קוצרו כדי שלא ייכנסו בשכנים או כדי שיודפסו בלי תמיכות. אפשר להוריד את ה"הטיה" או את ה"קימור", או להעלות את "גובה מינימלי".` });
 
     // colours
@@ -1189,7 +1278,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     if (big.length) warnings.push({ kind: 'warn', text: `${big.length} חלקים רחבים ממשטח ההדפסה.` });
 
     return {
-      outer, region, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank'), seams,
+      outer, region, frameOuter, hideRim, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank'), seams,
       tiles: usedTiles, tileGrid: P, islandPolys, knobs, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominal,
       bounds: ob
     };
@@ -1498,6 +1587,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
       m.wall(r0, r1); if (lg) { m.wall(r1, lg); m.wall(lg, prev); } else m.wall(r1, prev);
     }
+    if (c.wrap) extrudeGeom(m, c.wrap, c.zr || 0, c.z0 - 0.01);   // skirt over the hidden outer rail, down to the wall
     for (const l of (c.layers || [])) { const r = l.zv ? l.poly.map((p, i) => m.pt(p[0], p[1], l.zv[i])) : m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
     if (c.tipFlat) { m.capUp(prev); return m; }
     const a = m.pt(c.apex[0], c.apex[1], c.zApex);
@@ -2142,7 +2232,7 @@ function renderPanel() {
     chips('', 'shape.type', SHAPES, v => { if (v === 'circle') s.shape.h = s.shape.w; }),
     slider('רוחב', '', 'shape.w', 100, 1500, 5, 'מ"מ', { hardMin: 60, onChange: v => { if (s.shape.type === 'circle') s.shape.h = v; } }),
     s.shape.type === 'circle' ? null : slider('גובה', '', 'shape.h', 100, 1500, 5, 'מ"מ', { hardMin: 60 }),
-    slider('שוליים', 'המסגרת החיצונית', 'shape.rim', 3, 30, 0.5, 'מ"מ')
+    s.frame.hideRim ? el('p', { class: 'hint' }, 'המסגרת ההיקפית מוסתרת בתוך החלקים (ב"מסגרת והתאמה"), ולכן אין שוליים גלויים.') : slider('שוליים', 'המסגרת החיצונית', 'shape.rim', 3, 30, 0.5, 'מ"מ')
   ]));
 
   // 2 pieces / tessellation
@@ -2232,6 +2322,10 @@ function renderPanel() {
     slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 6, 0.1, 'מ"מ'),
     slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.07', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
     slider('רווח בין חלקים', '', 'frame.gap', 0.1, 2, 0.05, 'מ"מ'),
+    chips('המסגרת ההיקפית', 'frame.hideRim', [[false, 'בולטת'], [true, 'מוסתרת בתוך החלקים']]),
+    el('p', { class: 'hint' }, fr.hideRim
+      ? 'החלקים שבשולי הפאנל נמשכים עד הקצה ויורדים עד הקיר, כך שהם מכסים את הפס ההיקפי של המסגרת ונראה כאילו הם יוצאים מתוך הקיר. מתחת לכל חלק כזה יש מדף שטוח שנח על הפס, ומחוצה לו דופן דקה (1.6 מ"מ) שיורדת עד הקיר. הפס עצמו צר כמו צלע בין תאים.'
+      : 'המסגרת ההיקפית בולטת סביב הפאנל, ורוחבה נקבע ב"שוליים" בחלק "גודל וצורה". אפשר להסתיר אותה בתוך החלקים שבשוליים.'),
     el('div', { class: 'field-label' }, 'חיבור בין אריחים'),
     el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. בכל חיבור יש מחברי זנב יונה שננעלים כמו פאזל, ודבק רק מקבע אותם.'),
     slider('רוחב צלע בחיבור', 'מקום למחבר', 'frame.joint', 6, 14, 0.5, 'מ"מ'),
