@@ -934,7 +934,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     cells.forEach(c => { if (c.seam) c.seam = c.seam.map(o => (o && o.mergedInto) || o); });
     // dovetail joints across seam edges
     const knobs = [];
-    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.1;
+    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.2;
     const trap = (m, u, n, w1, w2, h, back) => [
       [m[0] - u[0] * w1 / 2 - n[0] * back, m[1] - u[1] * w1 / 2 - n[1] * back],
       [m[0] + u[0] * w1 / 2 - n[0] * back, m[1] + u[1] * w1 / 2 - n[1] * back],
@@ -967,28 +967,40 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         return inOwn > 0.7 * jw1 * 1.2 && inTgt > 0.7 * jh * (jw1 + jw2) / 2;
       } catch (e) { return false; }
     };
+    // seam edges, grouped by the pair of tiles they join. Tabs are spread thin: about half as many as one or
+    // two per edge, so a tile seam can be pushed together without a crowd of tight tabs each catching in turn
+    const seamEdges = new Map();
     cells.forEach(c => c.kind !== 'merged' && c.seam.forEach((o, i) => {
       if (!o) return;
-      const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const nKnobs = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
-      if (!nKnobs) return;
       // each shared edge is seen from both cells, and the two cells' outlines differ by rounding,
       // so handle it only from the lower-numbered cell (two tabs on one edge cut each other into slivers)
       if (cellIdx.get(c) > cellIdx.get(o)) return;
-      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
-      // alternate who owns the tab so tiles lock in both directions
-      const flip = ((Math.round(a[0] + b[0]) * 7 + Math.round(a[1] + b[1]) * 13) & 1) === 1;
-      for (let k = 0; k < nKnobs; k++) {
-        const own = (flip !== (k === 1)) ? c : o, tgt = own === c ? o : c;
+      const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const nOld = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
+      if (!nOld) return;
+      const key = [c.tile, o.tile].sort().join('|');
+      if (!seamEdges.has(key)) seamEdges.set(key, []);
+      seamEdges.get(key).push({ c, o, a, b, L, nOld });
+    }));
+    for (const list of seamEdges.values()) {
+      // order the edges along the seam, so the kept tabs are evenly spaced
+      const xs = list.map(e => e.a[0] + e.b[0]), ys = list.map(e => e.a[1] + e.b[1]);
+      const alongX = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+      list.sort((p, q) => alongX ? (p.a[0] + p.b[0]) - (q.a[0] + q.b[0]) : (p.a[1] + p.b[1]) - (q.a[1] + q.b[1]));
+      let acc = 0.5, placedHere = 0;   // half a share to start: the first edge of every seam gets a tab
+      for (const { c, o, a, b, L, nOld } of list) {
+        acc += nOld / 2;
+        if (acc < 1) continue;
+        const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
+        // alternate who owns the tab so tiles lock in both directions
+        const own = placedHere % 2 ? o : c, tgt = own === c ? o : c;
         const nn = own === c ? n : [-n[0], -n[1]];
         // slide the tab along the edge until it and its socket keep solid frame all around them;
         // near a cell corner a tab can run into a neighbour's opening and leave loose slivers
-        const f0 = nKnobs === 1 ? 0.5 : (k ? 0.72 : 0.28), span = nKnobs === 1 ? 0.3 : 0.16;
         let placed = false;
         for (const df of [0, -0.04, 0.04, -0.08, 0.08, -0.12, 0.12, -0.16, 0.16, -0.22, 0.22, -0.3, 0.3]) {
-          if (Math.abs(df) > span) continue;
-          const f = f0 + df;
+          const f = 0.5 + df;
           const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
           // the tab must stay on this edge with room to spare at both ends
           if (Math.min(f, 1 - f) * L < jw2 / 2 + jc + knobMargin) continue;
@@ -996,9 +1008,11 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
           knobs.push({ owner: own.tile, target: tgt.tile, poly: ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), socket: ccw(trap(m, u, nn, jw1 + 2 * jc, jw2 + 2 * jc, jh + jc, 0.6)) });
           placed = true; break;
         }
-        if (!placed) skippedKnobs++;
+        // a tab that does not fit here moves on to the next edge (its share stays in acc)
+        if (placed) { acc -= 1; placedHere++; }
       }
-    }));
+      if (!placedHere) skippedKnobs++;
+    }
 
     const PC = root.polygonClipping;
     if (!PC) throw new Error('polygon-clipping not loaded');
@@ -1860,7 +1874,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
   async function buildFitTest(st, JSZip) {
     const fr = st.frame, pr = st.print, half = fr.rib / 2;
     const cs = 24, n = 5, rim = 5;
-    const clrs = [0.00, 0.025, 0.05, 0.10, 0.15]; // centred on the 0.05 mm that fit best on the MK4
+    const clrs = [0.03, 0.05, 0.07, 0.10, 0.15]; // around the 0.07 mm default (0.05 fit best on the first MK4 test)
     const W = n * cs + 2 * rim, H = cs + 2 * rim;
     const cells = [];
     for (let i = 0; i < n; i++) {
@@ -1869,7 +1883,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     }
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
-    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.1;
+    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.2;
     // the seam between cell 3 and 4 gets the wide rib and a dovetail, exactly like the real frame
     const openings = cells.map((c, i) => E.inset(c, [half, i === 2 ? jh2 : half, half, i === 3 ? jh2 : half]));
     const xs = -W / 2 + rim + 3 * cs;
@@ -1908,7 +1922,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
 /* Ready-made designs + filament palette */
 (function (root) {
   const PRINT = { bedW: 250, bedH: 210, bedZ: 220, margin: 5, spacing: 3, overhang: 50 };
-  const FRAME = { t: 3, rib: 2.4, clr: 0.05, gap: 0.4, color: '#85898c', joint: 9, knobW: 5, jointClr: 0.1, hang: { on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 } };
+  const FRAME = { t: 3, rib: 2.4, clr: 0.07, gap: 0.4, color: '#85898c', joint: 9, knobW: 5, jointClr: 0.2, hang: { on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 } };
   const PIECE = { curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, cutOn: false };
   const P = (o) => JSON.parse(JSON.stringify(Object.assign({ print: PRINT, frame: FRAME, piece: PIECE }, o)));
   const presets = [
@@ -2031,12 +2045,15 @@ function normalize(s) {
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
   s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
   if (s.piece.cutOn === undefined) s.piece.cutOn = s.piece.cutTilt > 0;   // designs saved before the switch keep their look
-  s.frame = Object.assign({ joint: 9, jointClr: 0.1, knobW: 5 }, s.frame);
+  s.frame = Object.assign({ joint: 9, jointClr: 0.2, knobW: 5 }, s.frame);
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
   if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; s.fitCal = 1; }
   // Uri's printed frame (2026-11-02): tiles at 0.05 mm were too tight to join; dovetails default to 0.1 mm.
   // Press-fit (frame.clr) stays 0.05. Move designs still on an old dovetail default (0.15 / 0.05) to 0.1.
   if (s.fitCal < 2) { if (s.frame.jointClr === 0.15 || s.frame.jointClr === 0.05) s.frame.jointClr = 0.1; s.fitCal = 2; }
+  // Uri (2026-11-04): press-fit 0.05 -> 0.07 and tile dovetails 0.1 -> 0.2 by default. Designs still on the
+  // previous defaults move up; values someone set by hand stay.
+  if (s.fitCal < 3) { if (s.frame.clr === 0.05) s.frame.clr = 0.07; if (s.frame.jointClr === 0.1) s.frame.jointClr = 0.2; s.fitCal = 3; }
   s.frame.hang = Object.assign({ on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 }, s.frame.hang || {});
   if (!Array.isArray(s.color.bands) || !s.color.bands.length) s.color.bands = base.color.bands;
   s.name = s.name || 'עיצוב חדש';
@@ -2210,16 +2227,16 @@ function renderPanel() {
   // 5 frame & fit
   const fr = s.frame;
   panel.append(section('frame', 6, 'מסגרת והתאמה', `עובי ${fr.t} · מרווח ${fr.clr} מ"מ`, [
-    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל למרווח הנעיצה היא 0.05 מ"מ ולמרווח במחבר בין אריחים 0.1 מ"מ, לפי בדיקות ההדפסה על ה-MK4.'),
+    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל למרווח הנעיצה היא 0.07 מ"מ ולמרווח במחבר בין אריחים 0.2 מ"מ, לפי בדיקות ההדפסה על ה-MK4.'),
     slider('עובי המסגרת', '', 'frame.t', 2, 6, 0.2, 'מ"מ'),
     slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 6, 0.1, 'מ"מ'),
-    slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.05', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
+    slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.07', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
     slider('רווח בין חלקים', '', 'frame.gap', 0.1, 2, 0.05, 'מ"מ'),
     el('div', { class: 'field-label' }, 'חיבור בין אריחים'),
     el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. בכל חיבור יש מחברי זנב יונה שננעלים כמו פאזל, ודבק רק מקבע אותם.'),
     slider('רוחב צלע בחיבור', 'מקום למחבר', 'frame.joint', 6, 14, 0.5, 'מ"מ'),
     slider('רוחב צוואר המחבר', '', 'frame.knobW', 3, 8, 0.5, 'מ"מ'),
-    slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.1', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
+    slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.2', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
     el('div', { class: 'field-label' }, 'תלייה על הקיר'),
     el('p', { class: 'hint' }, 'חורי התלייה לא מחושבים בזמן העבודה, כדי שהכול יגיב מהר. בלחיצה על "הורד ערכת הדפסה" תישאל אם להוסיף אותם, ואז הם מתווספים לחלקים ולמפת ההרכבה. ליד כל פינה יש מאחור חור מנעול בצורת L: ראש הבורג נכנס בעיגול, והפאנל מחליק עד שהבורג נתפס בקצה הזרוע. הזרוע האנכית לתלייה לאורך והזרוע שפונה לצד לתלייה לרוחב, ותמיד משתמשים בשני הברגים העליונים. החלקים והחלוקה נראים בדיוק כמו בלי חורי תלייה: החור ממוקם רק מתחת לחלק שיש בתוכו מקום לחלל, גם אם הוא לא בפינה ממש.'),
     slider('קוטר ראש הבורג', '', 'frame.hang.head', 6, 12, 0.1, 'מ"מ'),

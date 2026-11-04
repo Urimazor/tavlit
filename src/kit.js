@@ -185,7 +185,7 @@
   async function buildFitTest(st, JSZip) {
     const fr = st.frame, pr = st.print, half = fr.rib / 2;
     const cs = 24, n = 5, rim = 5;
-    const clrs = [0.00, 0.025, 0.05, 0.10, 0.15]; // centred on the 0.05 mm that fit best on the MK4
+    const clrs = [0.03, 0.05, 0.07, 0.10, 0.15]; // around the 0.07 mm default (0.05 fit best on the first MK4 test)
     const W = n * cs + 2 * rim, H = cs + 2 * rim;
     const cells = [];
     for (let i = 0; i < n; i++) {
@@ -194,7 +194,7 @@
     }
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
-    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.1;
+    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.2;
     // the seam between cell 3 and 4 gets the wide rib and a dovetail, exactly like the real frame
     const openings = cells.map((c, i) => E.inset(c, [half, i === 2 ? jh2 : half, half, i === 3 ? jh2 : half]));
     const xs = -W / 2 + rim + 3 * cs;
