@@ -719,7 +719,7 @@
     cells.forEach(c => { if (c.seam) c.seam = c.seam.map(o => (o && o.mergedInto) || o); });
     // dovetail joints across seam edges
     const knobs = [];
-    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.1;
+    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.2;
     const trap = (m, u, n, w1, w2, h, back) => [
       [m[0] - u[0] * w1 / 2 - n[0] * back, m[1] - u[1] * w1 / 2 - n[1] * back],
       [m[0] + u[0] * w1 / 2 - n[0] * back, m[1] + u[1] * w1 / 2 - n[1] * back],
@@ -752,28 +752,40 @@
         return inOwn > 0.7 * jw1 * 1.2 && inTgt > 0.7 * jh * (jw1 + jw2) / 2;
       } catch (e) { return false; }
     };
+    // seam edges, grouped by the pair of tiles they join. Tabs are spread thin: about half as many as one or
+    // two per edge, so a tile seam can be pushed together without a crowd of tight tabs each catching in turn
+    const seamEdges = new Map();
     cells.forEach(c => c.kind !== 'merged' && c.seam.forEach((o, i) => {
       if (!o) return;
-      const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
-      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const nKnobs = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
-      if (!nKnobs) return;
       // each shared edge is seen from both cells, and the two cells' outlines differ by rounding,
       // so handle it only from the lower-numbered cell (two tabs on one edge cut each other into slivers)
       if (cellIdx.get(c) > cellIdx.get(o)) return;
-      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
-      // alternate who owns the tab so tiles lock in both directions
-      const flip = ((Math.round(a[0] + b[0]) * 7 + Math.round(a[1] + b[1]) * 13) & 1) === 1;
-      for (let k = 0; k < nKnobs; k++) {
-        const own = (flip !== (k === 1)) ? c : o, tgt = own === c ? o : c;
+      const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
+      const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      const nOld = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
+      if (!nOld) return;
+      const key = [c.tile, o.tile].sort().join('|');
+      if (!seamEdges.has(key)) seamEdges.set(key, []);
+      seamEdges.get(key).push({ c, o, a, b, L, nOld });
+    }));
+    for (const list of seamEdges.values()) {
+      // order the edges along the seam, so the kept tabs are evenly spaced
+      const xs = list.map(e => e.a[0] + e.b[0]), ys = list.map(e => e.a[1] + e.b[1]);
+      const alongX = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
+      list.sort((p, q) => alongX ? (p.a[0] + p.b[0]) - (q.a[0] + q.b[0]) : (p.a[1] + p.b[1]) - (q.a[1] + q.b[1]));
+      let acc = 0.5, placedHere = 0;   // half a share to start: the first edge of every seam gets a tab
+      for (const { c, o, a, b, L, nOld } of list) {
+        acc += nOld / 2;
+        if (acc < 1) continue;
+        const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
+        // alternate who owns the tab so tiles lock in both directions
+        const own = placedHere % 2 ? o : c, tgt = own === c ? o : c;
         const nn = own === c ? n : [-n[0], -n[1]];
         // slide the tab along the edge until it and its socket keep solid frame all around them;
         // near a cell corner a tab can run into a neighbour's opening and leave loose slivers
-        const f0 = nKnobs === 1 ? 0.5 : (k ? 0.72 : 0.28), span = nKnobs === 1 ? 0.3 : 0.16;
         let placed = false;
         for (const df of [0, -0.04, 0.04, -0.08, 0.08, -0.12, 0.12, -0.16, 0.16, -0.22, 0.22, -0.3, 0.3]) {
-          if (Math.abs(df) > span) continue;
-          const f = f0 + df;
+          const f = 0.5 + df;
           const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
           // the tab must stay on this edge with room to spare at both ends
           if (Math.min(f, 1 - f) * L < jw2 / 2 + jc + knobMargin) continue;
@@ -781,9 +793,11 @@
           knobs.push({ owner: own.tile, target: tgt.tile, poly: ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), socket: ccw(trap(m, u, nn, jw1 + 2 * jc, jw2 + 2 * jc, jh + jc, 0.6)) });
           placed = true; break;
         }
-        if (!placed) skippedKnobs++;
+        // a tab that does not fit here moves on to the next edge (its share stays in acc)
+        if (placed) { acc -= 1; placedHere++; }
       }
-    }));
+      if (!placedHere) skippedKnobs++;
+    }
 
     const PC = root.polygonClipping;
     if (!PC) throw new Error('polygon-clipping not loaded');
