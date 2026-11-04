@@ -2200,7 +2200,7 @@ let state = loadLocal() || clone(PR.presets[1].state);
 let history = [JSON.stringify(state)], hIndex = 0;
 let model = null, buildError = null;
 let selPoint = 0, selBand = 0, addMode = null;
-const openSecs = new Set(['move']);
+const openSecs = new Set();   // every section starts closed; a click on its title opens it
 
 function loadLocal() { try { const s = localStorage.getItem(LS_KEY); return s ? normalize(JSON.parse(s)) : null; } catch (e) { return null; } }
 function saveLocal() { try { localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
