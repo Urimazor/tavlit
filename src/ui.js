@@ -19,7 +19,7 @@ function normalize(s) {
   const base = clone(PR.presets[1].state);
   for (const k of Object.keys(base)) if (typeof base[k] === 'object' && !Array.isArray(base[k])) s[k] = Object.assign({}, base[k], s[k] || {});
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
-  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, foot: 2.5, footIn: 0.8, upright: 0.6 }, s.piece || {});
+  s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
   if (s.piece.cutOn === undefined) s.piece.cutOn = s.piece.cutTilt > 0;   // designs saved before the switch keep their look
   s.frame = Object.assign({ joint: 9, jointClr: 0.1, knobW: 5 }, s.frame);
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
@@ -151,9 +151,6 @@ function renderPanel() {
     slider('סחרור', 'הקודקוד מסתובב בספירלה תוך כדי עלייה', 'piece.spiral', -180, 180, 1, '°'),
     slider('עובי', 'קטן = נפוח, גדול = דק וחד', 'piece.profile', 0.4, 2.5, 0.05, ''),
     slider('שכבות', 'יותר = עיקול חלק יותר', 'piece.layers', 3, 48, 1, ''),
-    slider('יציאה זקופה מהמסגרת', 'חלק נוטה יוצא קודם ישר מהמסגרת ורק אז נוטה, כך שהצד האחורי שלו לא נשכב על המסגרת. 0 = כל החלק נוטה מהבסיס (כמו קודם)', 'piece.upright', 0, 1, 0.05, ''),
-    slider('רגלית (גובה הכניסה לבסיס)', 'כל חלק עולה קודם פס ישר בגובה הזה מעל המסגרת, כך שגם חלקים נמוכים בשוליים וגם גבוהים במרכז נכנסים לבסיס באותו מרווח. 0 = כמו קודם', 'piece.foot', 0, 10, 0.5, ' מ"מ', { onCommit: () => renderPanel() }),
-    pc.foot > 0 ? slider('נסיגת הרגלית', 'כמה החלק נכנס פנימה בראש הרגלית: מרחיב את החריץ בין חלקים שכנים. 0 = דופן ישרה', 'piece.footIn', 0, 4, 0.1, ' מ"מ') : null,
     slider('התמזגות לצורה אחת', 'הפאות של הבסיס נמסות בהדרגה לצורה עגולה וחלקה כלפי מעלה', 'piece.smooth', 0, 1, 0.05, ''),
     slider('קיטום', '0 = שפיץ מלא, 1 = קטום נמוך, 1.5 = קטום נמוך מאוד', 'piece.truncate', 0, 1.5, 0.05, '', { onCommit: () => renderPanel() }),
     pc.truncate > 0 ? slider('כיפתיות', '0 = חיתוך ישר, 1 = כיפה מעוגלת', 'piece.dome', 0, 1, 0.05, '') : null,

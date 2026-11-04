@@ -837,7 +837,7 @@
     const usedTiles = tiles;
 
     // heights, lean and piece shape
-    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, foot: 0, footIn: 0, upright: 0 }, st.piece || {});
+    const mv = st.move, sf = st.surface, ps = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, st.piece || {});
     // finer outline so the facets can melt into a round section higher up
     if (ps.smooth > 0) pieces.forEach(c => {
       const q = Math.max(1, Math.ceil(36 / c.body.length));
@@ -849,7 +849,7 @@
       c.f = fieldAt(mv.points, c.c[0], c.c[1]);
       c.fm = Math.hypot(c.f[0], c.f[1]); fmax = Math.max(fmax, c.fm);
       const md = modsAt(mv.points, c.c[0], c.c[1]);
-      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, upright: ps.upright, truncate: ps.truncate, dome: ps.dome, cutTilt: 0, cutDir: [1, 0] };
+      c.shape = { curve: Math.max(-0.6, Math.min(1.5, ps.curve + md.curve)), twist: ps.twist * Math.PI / 180, spiral: (ps.spiral + md.spiral) * Math.PI / 180, profile: ps.profile, layers: Math.max(2, Math.round(ps.layers)), smooth: ps.smooth, truncate: ps.truncate, dome: ps.dome, cutTilt: 0, cutDir: [1, 0] };
       c.cutAdd = md.cut;
     });
     // angle of the truncation cut: 0 = parallel to the wall; the cut face turns toward a direction
@@ -878,21 +878,12 @@
         delete c.cutRaw;
       });
     }
-    const footH = Math.max(0, Math.min(15, +ps.foot || 0)), footIn = Math.max(0, Math.min(5, +ps.footIn || 0));
     pieces.forEach(c => {
       let h = sf.minH + sf.depth * c.s;
       if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
       c.zr = 0; c.h = h; c.skirt = 0;
       c.hb = Math.max(2, h);
       c.z0 = t + c.chamfer;
-      // foot: every piece first rises the same straight band from the frame (and steps in a little),
-      // so tall and low pieces meet the base with the same groove; the shape above keeps its top height
-      c.foot = 0; c.base = c.body;
-      if (footH > 0) {
-        let fp = footIn > 0 ? inset(c.body, footIn, true) : c.body.slice();
-        if (!fp) { const cc = centroid(c.body), rr = Math.sqrt(Math.max(1, Math.abs(area(c.body))) / Math.PI), k = Math.max(0.5, 1 - footIn / rr); fp = c.body.map(v => [cc[0] + (v[0] - cc[0]) * k, cc[1] + (v[1] - cc[1]) * k]); }
-        c.foot = Math.min(footH, Math.max(0, c.hb - 2)); c.base = fp;
-      }
       c.lean = [c.f[0] * mv.lean * c.hb, c.f[1] * mv.lean * c.hb];
       c.scale = 1;
       setApex(c);
@@ -976,19 +967,14 @@
   // optionally spiralling path
   function setApex(c) {
     const sh = c.shape, N = sh.layers;
-    // the loft starts on top of the foot band (if any); its height shrinks by the same amount
-    const body = c.base || c.body, foot = c.foot || 0, z0 = c.z0 + foot, hb = c.hb - foot;
     const lx = c.lean[0] * c.scale, ly = c.lean[1] * c.scale;
-    // upright: the lean path leaves the frame vertically (curved start) instead of tilting the whole piece
-    // from its base, which laid the trailing side of strongly leaning pieces down on the frame
-    const up = Math.max(0, Math.min(1, +sh.upright || 0));
-    const e = sh.curve >= 0 ? Math.max(1 + 1.5 * up, 1 + 2.5 * sh.curve) : 1 / (1 - 1.2 * sh.curve);   // a negative curve is a deliberate choice: kept
+    const e = sh.curve >= 0 ? 1 + 2.5 * sh.curve : 1 / (1 - 1.2 * sh.curve);
     const cx = c.c[0], cy = c.c[1];
     const at = (tt) => {
       const a = sh.spiral * tt, ca = Math.cos(a), sa = Math.sin(a), f = Math.pow(tt, e);
       return [cx + (lx * ca - ly * sa) * f, cy + (lx * sa + ly * ca) * f];
     };
-    const rm = Math.sqrt(Math.max(1, area(body)) / Math.PI);
+    const rm = Math.sqrt(Math.max(1, area(c.body)) / Math.PI);
     // 0..1 keeps the original range (cut at 45% height at 1); up to 1.5 cuts lower still
     const trunc = Math.max(0, Math.min(1.5, sh.truncate || 0)), tEnd = Math.max(0.15, 1 - 0.55 * trunc);
     const blendAt = tt => sh.smooth > 0 ? Math.pow(Math.min(1, tt / Math.max(0.05, 1.05 - sh.smooth)), 1.5) : 0;
@@ -1000,23 +986,23 @@
     };
     const section = (tt) => {
       const ctr = at(tt), sc = Math.pow(1 - tt, sh.profile), r = sh.twist * tt, cr = Math.cos(r), sr = Math.sin(r), bl = blendAt(tt);
-      return { ctr, sc, poly: body.map(v => xf(v, tt, ctr, sc, cr, sr, bl)) };
+      return { ctr, sc, poly: c.body.map(v => xf(v, tt, ctr, sc, cr, sr, bl)) };
     };
     const vAt = (v, tt) => { const r = sh.twist * tt; return xf(v, tt, at(tt), Math.pow(1 - tt, sh.profile), Math.cos(r), Math.sin(r), blendAt(tt)); };
     const tilt = sh.cutTilt || 0;
-    c.layers = foot > 0 ? [{ z: z0, poly: body }] : []; c.tipFlat = false; c.zMax = undefined;
+    c.layers = []; c.tipFlat = false; c.zMax = undefined;
     c.tip = at(1);   // where the uncut tip would be: the plan arrows show this, so lean stays visible when cut
     if (trunc > 0 && Math.abs(tilt) > 1e-4) {
       // tilted cut: a plane through the centre line at the cut height; every vertex column runs up
       // until it meets that plane, so the layers lean with it and the top face is flat on the plane
       // the plane is hinged at the low edge of the cut section, so it only rises from the truncation height
       // and never dives into the base (that folded the walls and made pieces shrink)
-      const ctr = at(tEnd), zC = z0 + hb * tEnd, tn = Math.tan(Math.abs(tilt)), d0 = sh.cutDir || [1, 0], d = tilt < 0 ? [-d0[0], -d0[1]] : d0;
+      const ctr = at(tEnd), zC = c.z0 + c.hb * tEnd, tn = Math.tan(Math.abs(tilt)), d0 = sh.cutDir || [1, 0], d = tilt < 0 ? [-d0[0], -d0[1]] : d0;
       const proj = (x, y) => (x - ctr[0]) * d[0] + (y - ctr[1]) * d[1];
       const pMax = Math.max(...section(tEnd).poly.map(q => proj(q[0], q[1])));
       const zp = (x, y) => zC + tn * (pMax - proj(x, y));
-      const T = body.map(v => {
-        const f = tt => { const q = vAt(v, tt); return z0 + hb * tt - zp(q[0], q[1]); };
+      const T = c.body.map(v => {
+        const f = tt => { const q = vAt(v, tt); return c.z0 + c.hb * tt - zp(q[0], q[1]); };
         if (f(0.97) <= 0) return 0.97;
         if (f(0.06) >= 0) return 0.06;
         let lo = 0.06, hi = 0.97;
@@ -1025,10 +1011,10 @@
       });
       // wv: rough section width at each vertex, so the overhang check can skip the thin tip like it does for flat layers
       const push = (poly, zv, wv) => c.layers.push({ z: Math.max(...zv), zLo: Math.min(...zv), zv, wv, poly });
-      const bodyW = Math.sqrt(Math.max(1, Math.abs(area(body))));
+      const bodyW = Math.sqrt(Math.max(1, Math.abs(area(c.body))));
       for (let k = 1; k <= N; k++) {
         const ts = T.map(t => t * k / N);
-        push(body.map((v, i) => vAt(v, ts[i])), ts.map(t => z0 + hb * t), ts.map(t => bodyW * Math.pow(1 - t, sh.profile)));
+        push(c.body.map((v, i) => vAt(v, ts[i])), ts.map(t => c.z0 + c.hb * t), ts.map(t => bodyW * Math.pow(1 - t, sh.profile)));
       }
       const last = c.layers[c.layers.length - 1];
       if ((sh.dome || 0) > 0) {
@@ -1044,8 +1030,8 @@
       c.zMax = Math.max(c.zApex, ...c.layers.map(l => l.z));
     } else if (trunc > 0) {
       let last = null;
-      for (let k = 1; k <= N; k++) { const tt = tEnd * k / N; last = section(tt); c.layers.push({ z: z0 + hb * tt, poly: last.poly }); }
-      const zTop = z0 + hb * tEnd;
+      for (let k = 1; k <= N; k++) { const tt = tEnd * k / N; last = section(tt); c.layers.push({ z: c.z0 + c.hb * tt, poly: last.poly }); }
+      const zTop = c.z0 + c.hb * tEnd;
       if ((sh.dome || 0) > 0) {
         const rL = rm * last.sc, h = sh.dome * rL * 0.9, M = 6, ctr = last.ctr;
         for (let j = 1; j < M; j++) {
@@ -1055,8 +1041,8 @@
         c.apex = ctr; c.zApex = zTop + h;
       } else { c.apex = last.ctr; c.zApex = zTop; c.tipFlat = true; }
     } else {
-      for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: z0 + hb * tt, poly: section(tt).poly }); }
-      c.apex = at(1); c.zApex = z0 + hb;
+      for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: c.z0 + c.hb * tt, poly: section(tt).poly }); }
+      c.apex = at(1); c.zApex = c.z0 + c.hb;
     }
     let x0 = c.apex[0], x1 = x0, y0 = c.apex[1], y1 = y0;
     const grow = poly => { for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } };
