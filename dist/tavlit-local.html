@@ -1227,6 +1227,43 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         }
       }
     }
+    // hidden outer frame: the outer sloped faces of an edge piece carry on down, in the same plane, to the wall
+    if (hideRim) pieces.forEach(c => {
+      c.flare = null;
+      const L1 = c.layers && c.layers[0];
+      if (!c.wrap || !L1) return;
+      const B = c.body, n = B.length, zl = i => L1.zv ? L1.zv[i] : L1.z;
+      const ds = new Array(n).fill(0), dsC = new Array(n).fill(0), out = new Array(n).fill(false);
+      for (let i = 0; i < n; i++) {
+        const j = (i + 1) % n, P = B[i], Q = B[j], L = Math.hypot(Q[0] - P[0], Q[1] - P[1]) || 1;
+        const nx = (Q[1] - P[1]) / L, ny = -(Q[0] - P[0]) / L, m = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
+        if (inside(outer, [m[0] + nx * 0.8, m[1] + ny * 0.8]) || inside(skirtIn, m)) continue;
+        const p1 = L1.poly[i], q1 = L1.poly[j];
+        const h = ((P[0] - p1[0]) * nx + (P[1] - p1[1]) * ny + (Q[0] - q1[0]) * nx + (Q[1] - q1[1]) * ny) / 2, dz = (zl(i) + zl(j)) / 2 - c.z0;
+        if (!(h > 0.01 && dz > 0.01)) continue;   // a face that leans outward or stands upright keeps the plain skirt
+        out[i] = true; ds[i] = -Math.min(c.z0 * h / dz, 4 * c.z0); dsC[i] = 0.3;
+      }
+      if (!out.some(Boolean)) return;
+      // move each vertex so every outer edge shifts out by its own amount and every other edge keeps its line
+      const shift = d => B.map((v, i) => {
+        const ip = (i - 1 + n) % n, a = B[ip], b2 = B[(i + 1) % n];
+        const e1 = [v[0] - a[0], v[1] - a[1]], e2 = [b2[0] - v[0], b2[1] - v[1]];
+        const l1 = Math.hypot(e1[0], e1[1]) || 1, l2 = Math.hypot(e2[0], e2[1]) || 1;
+        const n1 = [e1[1] / l1, -e1[0] / l1], n2 = [e2[1] / l2, -e2[0] / l2];   // outward normals of the edge before / after
+        const d1 = out[ip] ? d[ip] : 0, d2 = out[i] ? d[i] : 0;
+        if (!d1 && !d2) return v.slice();
+        const cr = n1[0] * n2[1] - n1[1] * n2[0];
+        if (Math.abs(cr) < 0.05) { const k = (d1 + d2) / 2; return [v[0] + (n1[0] + n2[0]) / 2 * k, v[1] + (n1[1] + n2[1]) / 2 * k]; }
+        // solve p·n1 = v·n1 + d1 and p·n2 = v·n2 + d2
+        const r1 = d1, r2 = d2;
+        return [v[0] + (r1 * n2[1] - r2 * n1[1]) / cr, v[1] + (n1[0] * r2 - n2[0] * r1) / cr];
+      });
+      const Bo = shift(ds.map(x => -x)), Ci = shift(dsC.map(x => -x));
+      if (Bo.some((q, i) => Math.hypot(q[0] - B[i][0], q[1] - B[i][1]) > 6 * c.z0)) return;   // a very sharp corner: keep the plain skirt
+      c.flare = { out, B: Bo, C: Ci };
+      for (const q of Bo) { if (q[0] < c.fp.x0) c.fp.x0 = q[0]; if (q[0] > c.fp.x1) c.fp.x1 = q[0]; if (q[1] < c.fp.y0) c.fp.y0 = q[1]; if (q[1] > c.fp.y1) c.fp.y1 = q[1]; }
+      c.fp.w = c.fp.x1 - c.fp.x0; c.fp.h = c.fp.y1 - c.fp.y0;
+    });
     const shortened = pieces.filter(c => c.scale < 0.999).length;
     if (islandTiles) warnings.push({ kind: 'warn', text: `ב-${islandTiles} אריחים נשארו שאריות מסגרת קטנות ומנותקות, והן הוסרו. כדאי להגדיל את "רוחב צלע בחיבור".` });
     {
@@ -1589,6 +1626,29 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       m.wall(r0, r1); if (lg) { m.wall(r1, lg); m.wall(lg, prev); } else m.wall(r1, prev);
     }
     if (c.wrap) extrudeGeom(m, c.wrap, c.zr || 0, c.z0 - 0.01);   // skirt over the hidden outer rail, down to the wall
+    if (c.flare) {
+      // a wedge under each run of outer faces: the sloped face carried down to the wall (B), closed by an upright
+      // face just inside the skirt (C) and end triangles; it overlaps the skirt, and the slicer joins them
+      const { out, B: Bo, C: Ci } = c.flare, n = c.body.length, z0 = c.zr || 0, zt = c.z0 - 0.01;
+      let start = out.findIndex((o, i) => o && !out[(i - 1 + n) % n]);
+      if (start < 0) start = 0;   // every edge faces out
+      for (let k = 0, i = start; k < n; k++, i = (i + 1) % n) {
+        if (!out[i] || (out[(i - 1 + n) % n] && i !== start)) continue;
+        const run = [i]; let j = (i + 1) % n;
+        while (out[(j - 1 + n) % n] && j !== i && run.length <= n) { run.push(j); if (!out[j]) break; j = (j + 1) % n; }
+        if (run.length < 2) continue;
+        const b = run.map(v => m.pt(Bo[v][0], Bo[v][1], z0)), cc = run.map(v => m.pt(Ci[v][0], Ci[v][1], z0));
+        const a = run.map(v => m.pt(Ci[v][0], Ci[v][1], zt)), t = run.map(v => m.pt(c.body[v][0], c.body[v][1], zt));
+        for (let r = 0; r < run.length - 1; r++) {
+          m.quad(b[r + 1], b[r], cc[r], cc[r + 1]);     // bottom, on the wall
+          m.quad(b[r + 1], t[r + 1], t[r], b[r]);       // the sloped outer face
+          m.quad(t[r + 1], a[r + 1], a[r], t[r]);       // narrow top strip at the body's base
+          m.quad(a[r + 1], cc[r + 1], cc[r], a[r]);     // upright inner face, inside the skirt
+        }
+        const e = run.length - 1;
+        m.quad(b[0], t[0], a[0], cc[0]); m.quad(cc[e], a[e], t[e], b[e]);   // ends
+      }
+    }
     for (const l of (c.layers || [])) { const r = l.zv ? l.poly.map((p, i) => m.pt(p[0], p[1], l.zv[i])) : m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
     if (c.tipFlat) { m.capUp(prev); return m; }
     const a = m.pt(c.apex[0], c.apex[1], c.zApex);
@@ -2325,7 +2385,7 @@ function renderPanel() {
     slider('רווח בין חלקים', '', 'frame.gap', 0.1, 2, 0.05, 'מ"מ'),
     chips('המסגרת ההיקפית', 'frame.hideRim', [[false, 'בולטת'], [true, 'מוסתרת בתוך החלקים']]),
     el('p', { class: 'hint' }, fr.hideRim
-      ? 'החלקים שבשולי הפאנל נמשכים עד הקצה ויורדים עד הקיר, כך שהם מכסים את הפס ההיקפי של המסגרת ונראה כאילו הם יוצאים מתוך הקיר. מתחת לכל חלק כזה יש מדף שטוח שנח על הפס, ומחוצה לו דופן דקה (1.6 מ"מ) שיורדת עד הקיר. הפס עצמו צר כמו צלע בין תאים.'
+      ? 'החלקים שבשולי הפאנל נמשכים עד הקצה ויורדים עד הקיר, כך שהם מכסים את הפס ההיקפי של המסגרת ונראה כאילו הם יוצאים מתוך הקיר. הפאה החיצונית המשופעת של כל חלק כזה ממשיכה באותו מישור עד הקיר, ולכן קצה הפאנל יוצא מעט רחב יותר ולא ישר לגמרי (כל חלק לפי השיפוע שלו). מתחת לחלק יש מדף שטוח שנח על הפס. הפס עצמו צר כמו צלע בין תאים.'
       : 'המסגרת ההיקפית בולטת סביב הפאנל, ורוחבה נקבע ב"שוליים" בחלק "גודל וצורה". אפשר להסתיר אותה בתוך החלקים שבשוליים.'),
     el('div', { class: 'field-label' }, 'חיבור בין אריחים'),
     el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. בכל חיבור יש מחברי זנב יונה שננעלים כמו פאזל, ודבק רק מקבע אותם.'),
