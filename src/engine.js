@@ -414,6 +414,7 @@
     const minFrac = st.tess.minFrac ?? 0.35;
     const t = fr.t, half = fr.rib / 2, clr = fr.clr, gap = fr.gap;
     const jointHalf = Math.max(half, (fr.joint ?? 9) / 2);
+    const bevel = Math.max(0.6, half + clr - gap / 2);   // 45°: rise = the step from the opening to the visible body
     let maxExt = 0;
     cells.forEach((c, i) => {
       c.id = i; c.c = centroid(c.poly);
@@ -489,9 +490,11 @@
         const body = inset(c.poly, gap / 2, concave);
         if (opening && collar && body && area(collar) > 12) {
           c.opening = opening; c.collar = collar; c.body = body;
-          let step = 0; // horizontal step from collar to body, so the chamfer stays near 45°
-          for (let i = 0; i < collar.length; i++) step = Math.max(step, Math.hypot(collar[i][0] - body[i][0], collar[i][1] - body[i][1]));
-          c.chamfer = Math.max(0.6, step * 0.75);
+          // the same small 45° bevel from the frame on every piece. Next to a tile seam the rib is wider than the
+          // bevel reaches, so there the piece's underside rests flat on the rib (c.ledge) and the bevel starts
+          // from that ledge; before, those pieces got a 3-6 mm tall bevel and sat higher than their neighbours
+          c.chamfer = bevel;
+          c.ledge = collar.map((q, i) => { const b = body[i], dx = q[0] - b[0], dy = q[1] - b[1], L = Math.hypot(dx, dy); return L <= bevel ? q : [b[0] + dx * bevel / L, b[1] + dy * bevel / L]; });
           return true;
         }
       }
@@ -697,7 +700,7 @@
         if (op.members.length > 1) {
           // join the two pieces: the first takes the joined outline, the second disappears
           const [A, B] = op.members;
-          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, chamfer: c.chamfer, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
+          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, chamfer: c.chamfer, ledge: c.ledge, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
           B.kind = 'merged'; B.mergedInto = A;
           pieces.splice(pieces.indexOf(B), 1);
           c = A;
@@ -841,7 +844,7 @@
     // finer outline so the facets can melt into a round section higher up
     if (ps.smooth > 0) pieces.forEach(c => {
       const q = Math.max(1, Math.ceil(36 / c.body.length));
-      c.body = subdivide(c.body, q); c.collar = subdivide(c.collar, q);
+      c.body = subdivide(c.body, q); c.collar = subdivide(c.collar, q); if (c.ledge) c.ledge = subdivide(c.ledge, q);
     });
     let fmax = 0;
     pieces.forEach(c => {
@@ -1246,7 +1249,8 @@
       // nudge points that sit on a straight edge a hair inward, so the flat underside triangulates cleanly
       const cc = centroid(c.collar), nudge = (ring, k0) => ring.map((p, i) => { const d = 0.002 * (1 + ((i * 7 + k0) % 5)); const dx = cc[0] - p[0], dy = cc[1] - p[1], L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * d, p[1] + dy / L * d]; });
       const zb = fr.t, r0 = m.ring(nudge(c.collar, 0), zb);
-      prev = m.ring(c.body, c.z0); m.wall(r0, prev);   // same chamfer as every other piece
+      const lg = c.ledge ? m.ring(c.ledge, zb) : r0; if (c.ledge) m.wall(r0, lg);   // flat underside where it rests on a wide rib
+      prev = m.ring(c.body, c.z0); m.wall(lg, prev);   // same bevel as every other piece
       const l0 = m.ring(c.pocketLo, zb), l1 = m.ring(c.pocketLo, c.pocketLoTop);
       const p0 = m.ring(c.pocket, c.pocketLoTop), p1 = m.ring(c.pocket, c.pocketTop);
       const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, c.pocketLo) : null;
@@ -1259,10 +1263,11 @@
     } else {
       const zr = c.zr || 0;
       const r0 = m.ring(c.collar, zr), r1 = m.ring(c.collar, zr + fr.t);
+      const lg = c.ledge ? m.ring(c.ledge, zr + fr.t) : null;
       prev = m.ring(c.body, c.z0);
       const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, null) : null;
       if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
-      m.wall(r0, r1); m.wall(r1, prev);
+      m.wall(r0, r1); if (lg) { m.wall(r1, lg); m.wall(lg, prev); } else m.wall(r1, prev);
     }
     for (const l of (c.layers || [])) { const r = l.zv ? l.poly.map((p, i) => m.pt(p[0], p[1], l.zv[i])) : m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
     if (c.tipFlat) { m.capUp(prev); return m; }
