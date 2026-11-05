@@ -195,11 +195,21 @@
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
     const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.2;
-    // the seam between cell 3 and 4 gets the wide rib and a dovetail, exactly like the real frame
-    const openings = cells.map((c, i) => E.inset(c, [half, i === 2 ? jh2 : half, half, i === 3 ? jh2 : half]));
+    // the seam between cell 3 and 4 carries a dovetail, exactly like the real frame: the normal rib, widened
+    // only around the tab, where the two pieces' collars get a notch; the two halves meet with the dovetail play
     const xs = -W / 2 + rim + 3 * cs;
-    const left = [[-W / 2, -H / 2], [xs, -H / 2], [xs, H / 2], [-W / 2, H / 2]], right = [[xs, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs, H / 2]];
-    const w1 = fr.knobW ?? 5, w2 = w1 + 2.4, jh = Math.max(1.6, jh2 - 1.6);
+    const left = [[-W / 2, -H / 2], [xs - jc / 2, -H / 2], [xs - jc / 2, H / 2], [-W / 2, H / 2]], right = [[xs + jc / 2, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs + jc / 2, H / 2]];
+    const w1 = fr.knobW ?? 5, w2 = w1 + 2.4, jh = Math.max(1.6, jh2 - 1.6), km = 1.0;
+    const parts = cells.map((c, i) => {
+      const X = { poly: c, opening: E.inset(c, half), collar: E.inset(E.inset(c, half), clrs[i]), body: E.inset(c, fr.gap / 2) };
+      // cell 3 owns the tab (its right edge, index 1), cell 4 takes the socket (its left edge, index 3)
+      const nt = i === 2 ? { o: c[1], uk: [0, 1], nIn: [-1, 0], s1: cs / 2 - (w1 + 2 * (jc + km)) / 2, s2: cs / 2 + (w1 + 2 * (jc + km)) / 2, D: 1.2 + km }
+        : i === 3 ? { o: c[3], uk: [0, -1], nIn: [1, 0], s1: cs / 2 - (w2 + 2 * (jc + km)) / 2, s2: cs / 2 + (w2 + 2 * (jc + km)) / 2, D: jh + jc + km } : null;
+      if (!nt || nt.D <= half) return X;
+      const r = E.notchCut(X, [nt], clrs[i]);
+      return r ? Object.assign(X, { opening: r.opening, collar: r.collar, body: r.body, notch: r.notch }) : X;
+    });
+    const openings = parts.map(X => X.opening);
     const dt = (w1_, w2_, h_, back) => [[xs - back, -w1_ / 2], [xs - back, w1_ / 2], [xs, w1_ / 2], [xs + h_, w2_ / 2], [xs + h_, -w2_ / 2], [xs, -w1_ / 2]].reverse();
     const holes = openings.map(o => [ring(o)]);
     const gA = PCl.difference(PCl.union([ring(left)], [ring(E.ccw(dt(w1, w2, jh, 1.2)))]), ...holes);
@@ -209,9 +219,9 @@
     const merged = new E.Mesh().append(mA, objs[0].x, objs[0].y, 0).append(mB, objs[1].x, objs[1].y, 0);
     const lines = [];
     cells.forEach((c, i) => {
-      const op = openings[i], clr = clrs[i];
-      const chamfer = Math.max(0.6, (i === 2 || i === 3 ? jh2 : half) + clr - fr.gap / 2);
-      const pc = { collar: E.inset(op, clr), body: E.inset(c, fr.gap / 2), apex: E.centroid(c), z0: fr.t + chamfer, zApex: fr.t + chamfer + 6 + i * 3, layers: [] };
+      const clr = clrs[i];
+      const chamfer = Math.max(0.6, half + clr - fr.gap / 2);
+      const pc = { collar: parts[i].collar, body: parts[i].body, notch: parts[i].notch, apex: E.centroid(c), z0: fr.t + chamfer, zApex: fr.t + chamfer + 6 + i * 3, layers: [] };
       const m = E.localize(E.pieceMesh(pc, fr));
       const x = (pr.bedW - W) / 2 + i * (cs + 6), y = 20;
       objs.push({ name: `fit-${clr.toFixed(2)}mm`, mesh: m, x, y });
