@@ -245,7 +245,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         <dt>שתי אצבעות</dt><dd>הזזה וצביטה לזום, ובמצב חופשי סיבוב שלהן מגלגל</dd>
         <dt>הקשה כפולה</dt><dd>מיקוד בנקודה, או התאמה כשמקישים על הרקע</dd>
       </dl>
-      <p>במצב רגיל הקיר נשאר זקוף, כמו ב־Blender וב־PrusaSlicer. במצב "חופשי" אפשר להגיע לכל זווית, כולל הפוך.</p>
+      <p>במצב רגיל הסיבוב הוא סביב הציר של הפאנל עצמו, כמו משטח ההדפסה ב־PrusaSlicer: גרירה לצדדים מקיפה את הפאנל לאורך השוליים שלו, גרירה למעלה ולמטה מטה בין מבט ישר לפנים לבין מבט מהצד, והפאנל לא נוטה. במצב "חופשי" אפשר להגיע לכל זווית, כולל הפוך.</p>
     </div>
     <div id="viewmap" hidden></div>
     <div class="busy" id="busy" hidden>מחשב…</div>
@@ -2630,11 +2630,15 @@ let lastSize = null, camMode = 'iso';
 // a double click focuses on the point under the cursor (it becomes the orbit centre), a double click on empty space
 // or with the middle button fits the model. "Upright" orbit is a turntable that keeps the wall vertical (Blender's
 // default); "free" orbit is a trackball with roll and no limit, so any angle is reachable.
+// The turntable spins around the panel's own axis (its depth, z), the way PrusaSlicer spins the print bed:
+// a sideways drag walks the camera round the panel's edge, an up/down drag tilts between face-on and edge-on,
+// and the panel never tips. yaw/pitch are measured in that panel frame: pitch 90° looks straight at the face.
 const NAV_VIEWS = {
-  iso: [Math.atan2(-0.55, 0.76), Math.asin(0.35 / Math.hypot(0.55, 0.35, 0.76))],
-  front: [0, 0], back: [Math.PI, 0], left: [-Math.PI / 2, 0], right: [Math.PI / 2, 0],
-  top: [0, Math.PI / 2], bottom: [0, -Math.PI / 2],
+  iso: [Math.atan2(-0.55, -0.35), Math.asin(0.76 / Math.hypot(0.55, 0.35, 0.76))],
+  front: [0, Math.PI / 2], back: [Math.PI, -Math.PI / 2], left: [-Math.PI / 2, 0], right: [Math.PI / 2, 0],
+  top: [Math.PI, 0], bottom: [0, 0],
 };
+const PANEL_UP = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(1, 0, 0), Math.PI / 2);   // maps the y-up frame onto z-up
 const nav = (() => {
   const cv = renderer.domElement;
   const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
@@ -2643,8 +2647,9 @@ const nav = (() => {
   let dist = 1000, yaw = 0, pitch = 0, free = false, sceneR = 300;
   let anim = null, spin = null, moved = true, pivotUntil = 0, onUser = () => {};
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
-  const levelQ = (y, p) => new THREE.Quaternion().setFromEuler(new THREE.Euler(-p, y, 0, 'YXZ'));
+  const levelQ = (y, p) => PANEL_UP.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-p, y, 0, 'YXZ')));
   function anglesOf(qq) {
+    qq = PANEL_UP.clone().invert().multiply(qq);
     const o = V(0, 0, 1).applyQuaternion(qq), p = Math.asin(clamp(o.y, -1, 1));
     if (Math.abs(o.y) < 0.999) return { yaw: Math.atan2(o.x, o.z), pitch: p };
     const u = V(0, 1, 0).applyQuaternion(qq);
@@ -3060,7 +3065,7 @@ const NAV_NOTE = () => matchMedia('(pointer: coarse)').matches && !matchMedia('(
   : 'גרירה או כפתור אמצעי: סיבוב · ימני או Shift: הזזה · גלגלת: זום לסמן · לחיצה כפולה: מיקוד · F: התאמה · ? לעזרה';
 $('#stageNote').textContent = NAV_NOTE();
 function showHelp(on) { $('#navHelp').hidden = !on; $('#navHelpBtn').setAttribute('aria-pressed', String(on)); }
-function setFreeOrbit(on) { nav.setFree(on); $('#freeOrbit').setAttribute('aria-pressed', String(on)); toast(on ? 'סיבוב חופשי: אין נעילת אופק, Alt + גרירה מגלגל.' : 'סיבוב זקוף: הקיר נשאר אנכי.', 2400); }
+function setFreeOrbit(on) { nav.setFree(on); $('#freeOrbit').setAttribute('aria-pressed', String(on)); toast(on ? 'סיבוב חופשי: אין נעילת אופק, Alt + גרירה מגלגל.' : 'סיבוב סביב ציר הפאנל: הפאנל לא נוטה.', 2400); }
 $('#fitView').addEventListener('click', () => { nav.fit(); camMode = null; markCam(); });
 $('#freeOrbit').addEventListener('click', () => setFreeOrbit(!nav.free));
 $('#navHelpBtn').addEventListener('click', e => { e.stopPropagation(); showHelp($('#navHelp').hidden); });
