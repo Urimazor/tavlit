@@ -115,6 +115,11 @@ button { cursor: pointer; }
 #view3d canvas.grabbing { cursor: grabbing; }
 #view3d canvas.panning { cursor: move; }
 .seg button#navHelpBtn { font-weight: 600; min-width: 34px; }
+.section-bar { position: absolute; z-index: 3; bottom: 34px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.14); font-size: 12.5px; max-width: calc(100% - 24px); }
+.section-bar input[type=range] { width: min(320px, 50vw); accent-color: var(--accent); }
+.section-bar output { font-family: var(--f-mono); min-width: 3.2em; direction: ltr; text-align: center; }
+.section-bar .section-edge { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.section-bar .icon-btn { padding: 4px 10px; font-size: 12.5px; }
 .pivot { position: absolute; z-index: 2; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid var(--accent); background: rgba(255,255,255,.55); box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; left: 0; top: 0; }
 .nav-help { position: absolute; z-index: 4; top: 54px; inset-inline-end: 12px; width: min(440px, calc(100% - 24px)); max-height: calc(100% - 70px); overflow: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.18); font-size: 12.5px; }
 .nav-help h3 { margin: 6px 0 4px; font-size: 13px; }

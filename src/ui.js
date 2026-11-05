@@ -344,7 +344,9 @@ renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 host.append(renderer.domElement);
+renderer.localClippingEnabled = true;
 const scene = new THREE.Scene();
+const clipPlanes = [];   // empty, or the one section plane (see the section view below)
 const camera = new THREE.PerspectiveCamera(32, 1, 1, 20000);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f8a, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -424,7 +426,7 @@ const nav = (() => {
   function pick(x, y) {
     rayAt(x, y);
     const objs = [frameGroup, pieceGroup].filter(g => g.visible);
-    const hit = ray.intersectObjects(objs, true)[0];
+    const hit = ray.intersectObjects(objs, true).find(h => !h.object.userData.cap && (!clipPlanes.length || clipPlanes[0].distanceToPoint(h.point) >= -0.01));
     if (hit) return hit.point.clone();
     if (wall.visible) {
       const p = ray.ray.intersectPlane(new THREE.Plane(V(0, 0, 1), -wall.position.z), V());
@@ -595,7 +597,7 @@ const nav = (() => {
     return null;
   }
   return {
-    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick,
+    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick, modelBox,
     get free() { return free; },
     set onUser(f) { onUser = f; },
     tick(now) {
@@ -625,18 +627,27 @@ function geomFromMesh(m) {
   return g;
 }
 function disposeGroup(gr) { gr.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); gr.clear(); }
+// Section caps: every part is a closed solid, so where the plane cuts it the camera looks into its inside faces.
+// Drawing those back faces in a flat, darker tone of the part's colour makes the cut read as a solid face.
+function capMaterial(hex) {
+  const c = new THREE.Color(hex), hsl = {}; c.getHSL(hsl);
+  c.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), hsl.l * 0.55 + 0.04);
+  return new THREE.MeshBasicMaterial({ color: c, side: THREE.BackSide, clippingPlanes: clipPlanes });
+}
+function addCap(me, mat) { const cap = new THREE.Mesh(me.geometry, mat); cap.visible = clipPlanes.length > 0; cap.userData.cap = true; me.add(cap); }
 function update3D() {
   disposeGroup(frameGroup); disposeGroup(pieceGroup);
   if (!model) return;
   const fr = state.frame;
-  const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(fr.color), roughness: 0.75, flatShading: true });
-  model.tiles.forEach(tl => { const me = new THREE.Mesh(geomFromMesh(E.tileMesh(tl, fr)), frameMat); me.castShadow = me.receiveShadow = true; frameGroup.add(me); });
+  const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(fr.color), roughness: 0.75, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true });
+  const frameCap = capMaterial(fr.color);
+  model.tiles.forEach(tl => { const me = new THREE.Mesh(geomFromMesh(E.tileMesh(tl, fr)), frameMat); me.castShadow = me.receiveShadow = true; addCap(me, frameCap); frameGroup.add(me); });
   state.color.bands.forEach((hex, b) => {
     const merged = new E.Mesh();
     model.pieces.forEach(c => { if (c.band === b) merged.append(E.pieceMesh(c, fr)); });
     if (!merged.f.length) return;
-    const me = new THREE.Mesh(geomFromMesh(merged), new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true }));
-    me.castShadow = me.receiveShadow = true; pieceGroup.add(me);
+    const me = new THREE.Mesh(geomFromMesh(merged), new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true }));
+    me.castShadow = me.receiveShadow = true; addCap(me, capMaterial(hex)); pieceGroup.add(me);
   });
   const s = state.shape, size = Math.max(s.w, s.h);
   wall.scale.set(size * 4, size * 4, 1);
@@ -644,8 +655,64 @@ function update3D() {
   const sc = sun.shadow.camera; sc.left = sc.bottom = -size; sc.right = sc.top = size; sc.near = 1; sc.far = size * 4; sc.updateProjectionMatrix();
   const key = `${s.w}x${s.h}`;
   if (key !== lastSize) { lastSize = key; setCam(camMode, true); }
+  cut.refresh();
   invalidate();
 }
+// ---------- section view ----------
+// A cutting plane facing the current view: the slider pushes it from the front of the model to the back, everything
+// between the camera and the plane is cut away, and the plane stays put while the model is turned and zoomed.
+const cut = (() => {
+  const plane = new THREE.Plane(), n = new THREE.Vector3();
+  let on = false, t = 0.5;
+  const edge = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(24), 3)),
+    new THREE.LineBasicMaterial({ color: 0xf0b429, transparent: true, opacity: 0.9, depthTest: false }));
+  edge.renderOrder = 10; edge.visible = false; scene.add(edge);
+  function range() {
+    const b = nav.modelBox(); let lo = Infinity, hi = -Infinity;
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) { const d = n.dot(new THREE.Vector3(x, y, z)); lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    return { b, lo, hi };
+  }
+  function refresh() {
+    if (!on) return;
+    const { b, lo, hi } = range(), d = lo + (hi - lo) * t;
+    plane.set(n, -d);   // keeps the side beyond the plane, as seen from where the section was started
+    // outline: where the plane crosses the model's bounding box
+    const C = [b.min, b.max], pts = [];
+    for (let i = 0; i < 8; i++) for (let k = 0; k < 3; k++) {
+      if (i & (1 << k)) continue;
+      const a = new THREE.Vector3(C[i & 1].x, C[(i >> 1) & 1].y, C[(i >> 2) & 1].z), j = i | (1 << k);
+      const e = new THREE.Vector3(C[j & 1].x, C[(j >> 1) & 1].y, C[(j >> 2) & 1].z);
+      const da = plane.distanceToPoint(a), de = plane.distanceToPoint(e);
+      if ((da < 0) !== (de < 0)) pts.push(a.clone().lerp(e, da / (da - de)));
+    }
+    const pos = edge.geometry.attributes.position;
+    if (pts.length >= 3) {
+      const c = pts.reduce((m, p) => m.add(p), new THREE.Vector3()).divideScalar(pts.length);
+      const u = new THREE.Vector3().crossVectors(n, Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize(), w = new THREE.Vector3().crossVectors(n, u);
+      pts.sort((p, q) => Math.atan2(p.clone().sub(c).dot(w), p.clone().sub(c).dot(u)) - Math.atan2(q.clone().sub(c).dot(w), q.clone().sub(c).dot(u)));
+      pts.forEach((p, i) => pos.setXYZ(i, p.x, p.y, p.z));
+    }
+    edge.geometry.setDrawRange(0, pts.length >= 3 ? pts.length : 0);
+    pos.needsUpdate = true; edge.geometry.computeBoundingSphere();
+    $('#sectionVal').textContent = Math.round(t * 100) + '%';
+    invalidate();
+  }
+  function setCaps(vis) { [frameGroup, pieceGroup].forEach(g => g.traverse(o => { if (o.userData.cap) o.visible = vis; })); }
+  function set(v) {
+    on = v;
+    if (on) { camera.getWorldDirection(n); clipPlanes.length = 0; clipPlanes.push(plane); refresh(); }
+    else clipPlanes.length = 0;
+    setCaps(on); edge.visible = on;
+    $('#sectionBtn').setAttribute('aria-pressed', String(on)); $('#sectionBar').hidden = !on;
+    invalidate();
+  }
+  return {
+    set, refresh, get on() { return on; },
+    depth(v) { t = v; refresh(); },
+    edges(v) { edge.visible = on && v; invalidate(); },
+    get plane() { return plane; },
+  };
+})();
 function setCam(mode, jump) {
   camMode = mode;
   if (mode) nav.view(mode, jump); else nav.fit(jump);
@@ -709,6 +776,7 @@ function setTab(map) {
   $('#viewmap').hidden = !map; $('#view3d').style.visibility = map ? 'hidden' : 'visible';
   $('#camViews').hidden = map; $('#stageNote').textContent = map ? 'המספרים כאן זהים למספרים בפלטות. קו כחול מקווקו: גבול של אריח מסגרת.' : NAV_NOTE();
   if (map) showHelp(false);
+  $('#sectionBar').hidden = map || !cut.on;
   if (map) drawMap();
 }
 
@@ -802,6 +870,10 @@ function showHelp(on) { $('#navHelp').hidden = !on; $('#navHelpBtn').setAttribut
 function setFreeOrbit(on) { nav.setFree(on); $('#freeOrbit').setAttribute('aria-pressed', String(on)); toast(on ? 'סיבוב חופשי: אין נעילת אופק, Alt + גרירה מגלגל.' : 'סיבוב סביב ציר הפאנל: הפאנל לא נוטה.', 2400); }
 $('#fitView').addEventListener('click', () => { nav.fit(); camMode = null; markCam(); });
 $('#freeOrbit').addEventListener('click', () => setFreeOrbit(!nav.free));
+$('#sectionBtn').addEventListener('click', () => cut.set(!cut.on));
+$('#sectionDepth').addEventListener('input', e => cut.depth(+e.target.value / 100));
+$('#sectionEdge').addEventListener('change', e => cut.edges(e.target.checked));
+$('#sectionReset').addEventListener('click', () => { cut.set(false); cut.set(true); });
 $('#navHelpBtn').addEventListener('click', e => { e.stopPropagation(); showHelp($('#navHelp').hidden); });
 document.addEventListener('pointerdown', e => { if (!$('#navHelp').hidden && !e.target.closest('#navHelp,#navHelpBtn')) showHelp(false); });
 document.addEventListener('keydown', e => {
@@ -809,6 +881,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { showHelp(false); return; }
   if (e.key === '?' || e.code === 'KeyH' || (e.code === 'Slash' && e.shiftKey)) { e.preventDefault(); showHelp($('#navHelp').hidden); return; }
   if (e.code === 'KeyR') { setFreeOrbit(!nav.free); return; }
+  if (e.code === 'KeyC') { cut.set(!cut.on); return; }
   const act = nav.key(e); if (!act) return;
   e.preventDefault();
   if (act.view) setCam(act.view); else act();
@@ -818,4 +891,4 @@ $('#showPieces').addEventListener('click', e => { pieceGroup.visible = !pieceGro
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', drawPlan);
 
 renderPanel(); updateUndo(); resize(); rebuild();
-window.__tavlit = { nav, get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
+window.__tavlit = { nav, cut, get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
