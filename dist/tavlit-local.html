@@ -376,16 +376,33 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     return out;
   }
   // remove near-duplicate and collinear vertices, merge short edges
-  function simplify(p, minEdge) {
+  // rank(v): how many cells share point v (0: only this one). Merging a short edge first tries to carry the two
+  // neighbouring edges on, in their own lines, until they meet: those edges are shared with the cells next door,
+  // so the gap along them stays even. Otherwise the point shared by more cells stays where it is and the other end
+  // goes. Moving both to the middle of the short edge (each cell its own) opened wedge-shaped gaps at the panel's edge
+  function simplify(p, minEdge, rank) {
     let q = p.slice();
     let changed = true, guard = 0;
+    const rk = v => rank ? rank(v) : 0;
     while (changed && q.length > 3 && guard++ < 200) {
       changed = false;
       for (let i = 0; i < q.length; i++) {
-        const a = q[i], b = q[(i + 1) % q.length];
+        const j = (i + 1) % q.length, a = q[i], b = q[j];
         if (Math.hypot(b[0] - a[0], b[1] - a[1]) < minEdge) {
-          const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
-          q.splice(i, 1, m); q.splice((i + 1) % (q.length), 1);
+          const ra = rk(a), rb = rk(b);
+          const pv = q[(i - 1 + q.length) % q.length], nx = q[(j + 1) % q.length];
+          const d1 = [a[0] - pv[0], a[1] - pv[1]], d2 = [nx[0] - b[0], nx[1] - b[1]], den = d1[0] * d2[1] - d1[1] * d2[0];
+          let X = null;
+          if (Math.abs(den) > 1e-9) {
+            const t = ((b[0] - pv[0]) * d2[1] - (b[1] - pv[1]) * d2[0]) / den;
+            X = [pv[0] + d1[0] * t, pv[1] + d1[1] * t];
+            const mid = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+            if (!(t > 0.5) || Math.hypot(X[0] - mid[0], X[1] - mid[1]) > 1.5 * minEdge || Math.hypot(nx[0] - X[0], nx[1] - X[1]) < 1e-6) X = null;
+          }
+          if (X) { q.splice(i, 1, X); q.splice((i + 1) % q.length, 1); }
+          else if (ra > rb) q.splice(j, 1);
+          else if (rb > ra) q.splice(i, 1);
+          else { const m = [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2]; q.splice(i, 1, m); q.splice((i + 1) % (q.length), 1); }
           changed = true; break;
         }
       }
@@ -394,7 +411,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         const a = q[(i - 1 + q.length) % q.length], b = q[i], c = q[(i + 1) % q.length];
         const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
         const l = Math.hypot(b[0] - a[0], b[1] - a[1]) * Math.hypot(c[0] - b[0], c[1] - b[1]);
-        if (Math.abs(cr) < 0.02 * l) { q.splice(i, 1); changed = true; break; } // ~1.1°
+        if (Math.abs(cr) < 0.02 * l && rk(b) < 1) { q.splice(i, 1); changed = true; break; } // ~1.1°
       }
     }
     return q;
@@ -520,32 +537,38 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       return { cells, nominal: a * h / 2 };
     }
     if (t.type === 'radial') {
-      // cells use straight chords (pieces need convex outlines); tcells follow the true arcs on a
-      // shared angular grid so neighbouring rings meet without gaps when the frame is assembled
+      // Every ring is cut into straight-sided cells (pieces need convex outlines). Two rings share one boundary: the
+      // polygon through the outer ring's corners on that circle. A cell's outer side follows that polygon, so it
+      // meets the next ring along the very same line and the gap between rings stays even (with plain chords on
+      // both sides, rings with different counts crossed each other: overlaps in some places, wedges in others)
       const maxR = Math.hypot(Math.max(Math.abs(ob.x0), Math.abs(ob.x1)), Math.max(Math.abs(ob.y0), Math.abs(ob.y1))) + s;
       const n0 = Math.max(5, Math.round(t.center || 8));
-      const r0 = s * 1.1, RES = Math.PI / 360;
+      const r0 = s * 1.1, TAU = Math.PI * 2;
       const pol = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
-      const arc = (r, a0, a1) => { const out = [pol(r, a0)]; for (let g = Math.floor(a0 / RES) + 1; g * RES < a1 - 1e-9; g++) out.push(pol(r, g * RES)); out.push(pol(r, a1)); return out; };
-      const tcells = [];
+      const rings = [];   // { r: inner radius, n, tw }
+      for (let r = r0, ring = 0; r < maxR; r += s, ring++) rings.push({ r, n: Math.max(n0, Math.round((TAU * (r + s / 2)) / s)), tw: (t.twist || 0) * ring * 0.15 });
+      const md = x => ((x % TAU) + TAU) % TAU;
+      // the outer side of a cell spanning angles a0..a1 at radius R, where ring nx starts (null: a plain chord)
+      const outerSide = (R, a0, a1, nx) => {
+        if (!nx) return [pol(R, a1), pol(R, a0)];
+        const st = TAU / nx.n, rho = g => { const j = Math.floor(md(g - nx.tw) / st), mid = nx.tw + (j + 0.5) * st; return R * Math.cos(st / 2) / Math.cos(md(g - mid + Math.PI) - Math.PI); };
+        const pts = [pol(rho(a0), a0)];
+        const first = Math.ceil((a0 - nx.tw) / st - 1e-9);
+        for (let j = first; nx.tw + j * st < a1 - 1e-9; j++) { const g = nx.tw + j * st; if (g > a0 + 1e-9) pts.push(pol(R, g)); }
+        pts.push(pol(rho(a1), a1));
+        return pts.reverse();
+      };
       for (let k = 0; k < n0; k++) {
-        const a0 = (k / n0) * Math.PI * 2, a1 = ((k + 1) / n0) * Math.PI * 2;
-        cells.push([[0, 0], pol(r0, a0), pol(r0, a1)]);
-        tcells.push([[0, 0]].concat(arc(r0, a0, a1)));
+        const a0 = (k / n0) * TAU, a1 = ((k + 1) / n0) * TAU;
+        cells.push([[0, 0]].concat(outerSide(r0, a0, a1, rings[0]).reverse()));
       }
-      let r = r0, ring = 0;
-      while (r < maxR) {
-        const r2 = r + s;
-        const n = Math.max(n0, Math.round((Math.PI * 2 * (r + s / 2)) / s));
-        const twist = (t.twist || 0) * ring * 0.15;
-        for (let k = 0; k < n; k++) {
-          const a0 = (k / n) * Math.PI * 2 + twist, a1 = ((k + 1) / n) * Math.PI * 2 + twist;
-          cells.push([pol(r, a0), pol(r, a1), pol(r2, a1), pol(r2, a0)]);
-          tcells.push(arc(r, a0, a1).concat(arc(r2, a0, a1).reverse()));
+      rings.forEach((g, i) => {
+        for (let k = 0; k < g.n; k++) {
+          const a0 = (k / g.n) * TAU + g.tw, a1 = ((k + 1) / g.n) * TAU + g.tw;
+          cells.push([pol(g.r, a0), pol(g.r, a1)].concat(outerSide(g.r + s, a0, a1, rings[i + 1])));
         }
-        r = r2; ring++;
-      }
-      return { cells, tcells, nominal: s * s };
+      });
+      return { cells, nominal: s * s };
     }
     if (t.type === 'voronoi' || t.type === 'sunflower') {
       const D = root.d3 && root.d3.Delaunay;
@@ -691,6 +714,18 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     if (!region) throw new Error('המסגרת החיצונית רחבה מדי ביחס לגודל');
     const tz = tessellate(st.tess, region, outer);
     const minEdge = Math.max(1.2, fr.rib * 0.6);
+    // how many cells share a point: a corner of the region belongs to one cell only (0), a point where a cell edge
+    // meets the region's edge to two (1), a corner of the tessellation inside the region to three or more (2)
+    const pointRank = v => {
+      let on = false;
+      for (let k = 0; k < region.length; k++) {
+        const a = region[k], b = region[(k + 1) % region.length];
+        if (Math.abs(v[0] - a[0]) < 1e-4 && Math.abs(v[1] - a[1]) < 1e-4) return 0;
+        const ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1, t = ((v[0] - a[0]) * ex + (v[1] - a[1]) * ey) / l2;
+        if (t > 0 && t < 1 && Math.abs((v[0] - a[0]) * ey - (v[1] - a[1]) * ex) / Math.sqrt(l2) < 1e-4) on = true;
+      }
+      return on ? 1 : 2;
+    };
     const q3 = p => p.map(v => [Math.round(v[0] * 1000) / 1000, Math.round(v[1] * 1000) / 1000]);
     const cells = [], rimCells = [];
     for (let ci = 0; ci < tz.cells.length; ci++) {
@@ -701,7 +736,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       let p = clipConvex(raw, region);
       if (p && p.length >= 3) p = ccw(p);
       if (p && p.length >= 3 && area(p) >= 2) {
-        p = simplify(p, minEdge);
+        p = simplify(p, minEdge, pointRank);
         if (p.length >= 3 && area(p) > 1) { cells.push({ poly: p, area: area(p), tpoly: tp }); continue; }
       }
       rimCells.push({ tpoly: tp, c: centroid(tp) });
@@ -782,9 +817,11 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     // outline -> opening in the frame, press-fit collar and visible base of the piece
     function shapeCell(c, orig, concave) {
       for (let attempt = 0; attempt < 5; attempt++) {
-        if (attempt) { c.poly = simplify(orig, minEdge * (1 + attempt * 1.2)); c.seam = seamFlags(c); }
+        if (attempt) { c.poly = simplify(orig, minEdge * (1 + attempt * 1.2), pointRank); c.seam = seamFlags(c); }
         if (c.poly.length < 3) return false;
-        const ds = c.seam.map(o => o ? jointHalf : half);
+        // every edge, tile seams too, gets the normal rib: the visible gap stays the same all over the panel.
+        // Only where a dovetail sits does the frame widen, locally, into a notch in the collars on both sides (cutNotch)
+        const ds = half;
         const opening = inset(c.poly, ds, concave);
         const collar = opening && inset(opening, clr, concave);
         let bodyDs = gap / 2, outEdge = null;
@@ -1097,17 +1134,60 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const cellIdx = new Map(cells.map((c, i) => [c, i]));
     const knobMargin = 1.0; // solid frame kept around a socket (mm)
     let skippedKnobs = 0;
-    const openList = pieces.map(c => ({ ring: [q3(c.opening).concat([q3(c.opening)[0]])], bb: bbox(c.opening) }));
-    const knobFits = (m, u, nn) => {
-      const big = ccw(trap(m, u, nn, jw1 + 2 * (jc + knobMargin), jw2 + 2 * (jc + knobMargin), jh + jc + knobMargin, 1.2 + knobMargin));
+    const openList = pieces.map(c => ({ c, ring: [q3(c.opening).concat([q3(c.opening)[0]])], bb: bbox(c.opening) }));
+    // the tab, its socket and the solid frame around them, on both sides of the seam
+    const knobZone = (m, u, nn) => ccw(trap(m, u, nn, jw1 + 2 * (jc + knobMargin), jw2 + 2 * (jc + knobMargin), jh + jc + knobMargin, 1.2 + knobMargin));
+    // The seam keeps the normal rib, so the tab reaches into the two cells beside it. There the frame widens
+    // locally: each of those cells' openings (and the piece's collar) gets a notch around the tab. Any other cell's
+    // opening must stay clear of it, and a hanging piece (its cell is solid frame with the keyhole) is never notched.
+    const knobFits = (m, u, nn, own, tgt) => {
+      const big = knobZone(m, u, nn);
       const bb = bbox(big), r = [big.concat([big[0]])];
       for (const op of openList) {
+        if ((op.c === own || op.c === tgt) && !op.c.mount) continue;
         if (op.bb.x0 > bb.x1 || op.bb.x1 < bb.x0 || op.bb.y0 > bb.y1 || op.bb.y1 < bb.y0) continue;
         let hit; try { hit = root.polygonClipping.intersection(r, op.ring); } catch (e) { return false; }
         if (hit.some(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.01)) return false;
       }
       return true;
     };
+    // the notch a tab at m needs in cell X: a rectangle W wide, from the seam D deep into X; null when X needs
+    // none (no opening there, or the rib already reaches), false when it does not fit. It must leave a printable
+    // wall between itself and the rest of the collar, and not touch X's other notches
+    const notchFor = (X, m, u, D, W) => {
+      if (X.kind !== 'piece' || !X.opening || X.mount) return null;
+      if (D <= half + 0.05) return null;
+      const P = X.poly, n = P.length;
+      let k = -1, bestD = 0.6;
+      for (let i = 0; i < n; i++) {
+        const a = P[i], b = P[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+        if (L < 1e-9) continue;
+        const ux = (b[0] - a[0]) / L, uy = (b[1] - a[1]) / L;
+        if (Math.abs(ux * u[0] + uy * u[1]) < 0.985) continue;
+        const t = (m[0] - a[0]) * ux + (m[1] - a[1]) * uy, d = Math.abs((m[0] - a[0]) * -uy + (m[1] - a[1]) * ux);
+        if (t < 0 || t > L || d >= bestD) continue;
+        bestD = d; k = i;
+      }
+      if (k < 0) return false;
+      const a = P[k], b = P[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]), uk = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], nIn = [-uk[1], uk[0]];
+      const sm = (m[0] - a[0]) * uk[0] + (m[1] - a[1]) * uk[1];
+      const sp = { o: a, uk, nIn, s1: sm - W / 2, s2: sm + W / 2, D };
+      const list = (notchesOf.get(X) || []).concat([sp]);
+      const test = notchCut(X, list, clr);
+      if (!test || !simpleCCW(test.collarN) || area(test.collarN) < 12) return false;
+      // a printable wall between the notch and every part of the collar it does not cut into
+      const run = notchRun(X.collar, sp, sp.s1 - clr, sp.s2 + clr, D + clr), C = X.collar, nc = C.length;
+      const cutE = new Set(); for (let i = run.ka; ; i = (i + 1) % nc) { cutE.add(i); if (i === run.kb) break; }
+      const segs = [];
+      for (let i = 0; i < nc; i++) if (!cutE.has(i)) segs.push([C[i], C[(i + 1) % nc]]);
+      test.notch.forEach((nt, j) => { if (j < list.length - 1) { const q = [nt.a, ...nt.inner, nt.b]; for (let i = 0; i + 1 < q.length; i++) segs.push([q[i], q[i + 1]]); } });
+      for (const q of run.inner) for (const [p1, p2] of segs) {
+        const ex = p2[0] - p1[0], ey = p2[1] - p1[1], l2 = ex * ex + ey * ey || 1, tt = Math.max(0, Math.min(1, ((q[0] - p1[0]) * ex + (q[1] - p1[1]) * ey) / l2));
+        if (Math.hypot(q[0] - p1[0] - ex * tt, q[1] - p1[1] - ey * tt) < 1.2) return false;
+      }
+      return sp;
+    };
+    const notchesOf = new Map();
     // the tab's neck must sit in the owner's frame and its head in the neighbour's, or it ends up loose
     const anchored = (m, u, nn, own, tgt) => {
       const kp = ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), r = [kp.concat([kp[0]])];
@@ -1120,7 +1200,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     };
     // seam edges, grouped by the pair of tiles they join. Tabs are spread thin: about half as many as one or
     // two per edge, so a tile seam can be pushed together without a crowd of tight tabs each catching in turn
-    const seamEdges = new Map();
+    const seamEdges = new Map(), allSeam = new Map();
     cells.forEach(c => c.kind !== 'merged' && c.seam.forEach((o, i) => {
       if (!o) return;
       // each shared edge is seen from both cells, and the two cells' outlines differ by rounding,
@@ -1129,12 +1209,32 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
       const nOld = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
-      if (!nOld) return;
       const key = [c.tile, o.tile].sort().join('|');
+      if (!allSeam.has(key)) allSeam.set(key, []);
+      allSeam.get(key).push({ c, o, a, b, L, nOld });
+      if (!nOld) return;
       if (!seamEdges.has(key)) seamEdges.set(key, []);
       seamEdges.get(key).push({ c, o, a, b, L, nOld });
     }));
-    for (const list of seamEdges.values()) {
+    // try to put a tab on edge a-b, owned by own, at one of the places fs along the edge (0..1)
+    const tryPlace = (c, o, a, b, L, own, fs) => {
+      const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
+      const tgt = own === c ? o : c, nn = own === c ? n : [-n[0], -n[1]];
+      for (const f of fs) {
+        const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
+        // the tab must stay on this edge with room to spare at both ends
+        if (Math.min(f, 1 - f) * L < jw2 / 2 + jc + knobMargin) continue;
+        if (!own.tpoly || !tgt.tpoly || !anchored(m, u, nn, own, tgt) || !knobFits(m, u, nn, own, tgt)) continue;
+        const nOwn = notchFor(own, m, u, 1.2 + knobMargin, jw1 + 2 * (jc + knobMargin)), nTgt = notchFor(tgt, m, u, jh + jc + knobMargin, jw2 + 2 * (jc + knobMargin));
+        if (nOwn === false || nTgt === false) continue;
+        for (const [X, nt] of [[own, nOwn], [tgt, nTgt]]) if (nt) { if (!notchesOf.has(X)) notchesOf.set(X, []); notchesOf.get(X).push(nt); }
+        knobs.push({ owner: own.tile, target: tgt.tile, poly: ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), socket: ccw(trap(m, u, nn, jw1 + 2 * jc, jw2 + 2 * jc, jh + jc, 0.6)) });
+        return true;
+      }
+      return false;
+    };
+    const FS = [0, -0.04, 0.04, -0.08, 0.08, -0.12, 0.12, -0.16, 0.16, -0.22, 0.22, -0.3, 0.3].map(d => 0.5 + d);
+    for (const [key, list] of seamEdges) {
       // order the edges along the seam, so the kept tabs are evenly spaced
       const xs = list.map(e => e.a[0] + e.b[0]), ys = list.map(e => e.a[1] + e.b[1]);
       const alongX = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
@@ -1143,28 +1243,27 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       for (const { c, o, a, b, L, nOld } of list) {
         acc += nOld / 2;
         if (acc < 1) continue;
-        const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
-        // alternate who owns the tab so tiles lock in both directions
-        const own = placedHere % 2 ? o : c, tgt = own === c ? o : c;
-        const nn = own === c ? n : [-n[0], -n[1]];
-        // slide the tab along the edge until it and its socket keep solid frame all around them;
-        // near a cell corner a tab can run into a neighbour's opening and leave loose slivers
-        let placed = false;
-        for (const df of [0, -0.04, 0.04, -0.08, 0.08, -0.12, 0.12, -0.16, 0.16, -0.22, 0.22, -0.3, 0.3]) {
-          const f = 0.5 + df;
-          const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-          // the tab must stay on this edge with room to spare at both ends
-          if (Math.min(f, 1 - f) * L < jw2 / 2 + jc + knobMargin) continue;
-          if (!own.tpoly || !tgt.tpoly || !anchored(m, u, nn, own, tgt) || !knobFits(m, u, nn)) continue;
-          knobs.push({ owner: own.tile, target: tgt.tile, poly: ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), socket: ccw(trap(m, u, nn, jw1 + 2 * jc, jw2 + 2 * jc, jh + jc, 0.6)) });
-          placed = true; break;
-        }
+        // alternate who owns the tab so tiles lock in both directions; slide it along the edge until it and its
+        // socket keep solid frame all around them (near a cell corner a tab can run into a neighbour's opening)
         // a tab that does not fit here moves on to the next edge (its share stays in acc)
-        if (placed) { acc -= 1; placedHere++; }
+        if (tryPlace(c, o, a, b, L, placedHere % 2 ? o : c, FS)) { acc -= 1; placedHere++; }
       }
-      if (!placedHere) skippedKnobs++;
+    }
+    // a pair of tiles still without a tab: try every edge they share, either way round, all along the edge
+    const FS2 = []; for (let f = 0.5, k = 0; k < 41; k++) { const d = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.02; if (Math.abs(d) <= 0.4) FS2.push(f + d); }
+    for (const [key, list] of allSeam) {
+      if (knobs.some(k => [k.owner, k.target].sort().join('|') === key)) continue;
+      let ok = false;
+      for (const { c, o, a, b, L } of list.slice().sort((p, q) => q.L - p.L)) { if (tryPlace(c, o, a, b, L, c, FS2) || tryPlace(c, o, a, b, L, o, FS2)) { ok = true; break; } }
+      if (!ok) skippedKnobs++;
     }
 
+    // put the notches into the pieces beside each tab
+    for (const [X, list] of notchesOf) {
+      const r = notchCut(X, list, clr);
+      X.opening = r.opening; X.collar = r.collar; X.body = r.body; if (r.outE) X.outE = r.outE; X.notch = r.notch;
+      X.ledge = X.collar.map((q, i) => { const b = X.body[i], dx = q[0] - b[0], dy = q[1] - b[1], L = Math.hypot(dx, dy); return L <= bevel ? q : [b[0] + dx * bevel / L, b[1] + dy * bevel / L]; });
+    }
     const PC = root.polygonClipping;
     if (!PC) throw new Error('polygon-clipping not loaded');
     const ringOf = p => { const r = q3(p); r.push(r[0]); return r; };
@@ -1185,8 +1284,16 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       try {
         // cells grow ~0.1 mm so rounding slits between neighbours close up
         const grow = c => { const cc = centroid(c.tpoly), k = 1 + 0.1 / Math.max(2, Math.min(c.tbb.w, c.tbb.h) / 2); return c.tpoly.map(v => [cc[0] + (v[0] - cc[0]) * k, cc[1] + (v[1] - cc[1]) * k]); };
-        g = PC.union(...mine.map(c => [ringOf(grow(c))]), ...knobs.filter(k => k.owner === id).map(k => [ringOf(k.poly)]));
+        g = PC.union(...mine.map(c => [ringOf(grow(c))]));
         g = g.map(poly => [poly[0]]); // close hairline gaps between neighbouring cells
+        // tile seams: each tile stays jointClr/2 back from the cells of the tiles next to it, so two tiles meet
+        // with the same play as their dovetails (the growth above used to make them overlap along the seam)
+        const tb = { x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity };
+        mine.forEach(c => { tb.x0 = Math.min(tb.x0, c.tbb.x0); tb.y0 = Math.min(tb.y0, c.tbb.y0); tb.x1 = Math.max(tb.x1, c.tbb.x1); tb.y1 = Math.max(tb.y1, c.tbb.y1); });
+        const nbT = allT.filter(c => c.tile !== id && c.tbb.x0 <= tb.x1 + 1 && c.tbb.x1 >= tb.x0 - 1 && c.tbb.y0 <= tb.y1 + 1 && c.tbb.y1 >= tb.y0 - 1);
+        if (nbT.length && jc > 0) g = PC.difference(g, PC.union(...nbT.map(c => [ringOf(inset(c.tpoly, -jc / 2, true) || c.tpoly)])));
+        const own = knobs.filter(k => k.owner === id);
+        if (own.length) g = PC.union(g, ...own.map(k => [ringOf(k.poly)]));
         g = PC.intersection(g, frameClip);
         const cut = knobs.filter(k => k.target === id).map(k => [ringOf(k.socket)]).concat(holesG);
         g = PC.difference(g, ...cut);
@@ -1435,6 +1542,78 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     };
   }
 
+  // Dovetail notches. A notch is given in the frame of the seam edge it sits on: origin o on that edge, uk along it,
+  // nIn into the cell; it spans s1..s2 along the edge and reaches D deep (measured from the edge). Where a notch is
+  // longer than the collar's edge it simply runs round the corner. The collar keeps its outline at the top of the
+  // frame, where the bevel starts (two points mark each notch on it); the notch is cut from the collar's column
+  // inside the frame, and its roof is a short flat bridge between its side walls (pieceMesh).
+  // run of a convex outline's boundary inside the notch rectangle: entry point pa on edge ka, exit pb on edge kb, and
+  // the rectangle's inner corners met on the way; null when the outline does not reach the rectangle, false when the
+  // boundary meets it in some other way (several runs, or a corner sitting exactly on its edge)
+  function notchRun(P, sp, s1, s2, D) {
+    const n = P.length, S = q => (q[0] - sp.o[0]) * sp.uk[0] + (q[1] - sp.o[1]) * sp.uk[1], Dd = q => (q[0] - sp.o[0]) * sp.nIn[0] + (q[1] - sp.o[1]) * sp.nIn[1];
+    const ivs = [];
+    for (let i = 0; i < n; i++) {
+      const A = P[i], B = P[(i + 1) % n], sa = S(A), sb = S(B), da = Dd(A), db = Dd(B);
+      let t0 = 0, t1 = 1;
+      for (const [v0, v1, lim, up] of [[sa, sb, s1, true], [sa, sb, s2, false], [da, db, D, false]]) {
+        const dv = v1 - v0;
+        if (Math.abs(dv) < 1e-12) { if (up ? v0 <= lim : v0 >= lim) { t0 = 1; t1 = 0; } continue; }
+        const t = (lim - v0) / dv;
+        if ((dv > 0) === up) t0 = Math.max(t0, t); else t1 = Math.min(t1, t);
+      }
+      ivs.push(t1 > t0 + 1e-9 ? [t0, t1] : null);
+    }
+    if (!ivs.some(Boolean)) return null;
+    const ent = [], ext = [];
+    ivs.forEach((v, i) => { if (!v) return; if (v[0] > 1e-9) ent.push(i); if (v[1] < 1 - 1e-9) ext.push(i); });
+    if (ent.length !== 1 || ext.length !== 1) return false;
+    const ka = ent[0], kb = ext[0], lp = (i, t) => { const A = P[i], B = P[(i + 1) % n]; return [A[0] + (B[0] - A[0]) * t, A[1] + (B[1] - A[1]) * t]; };
+    const pt = (sv, dv) => [sp.o[0] + sp.uk[0] * sv + sp.nIn[0] * dv, sp.o[1] + sp.uk[1] * sv + sp.nIn[1] * dv];
+    const inner = [pt(s1, D), pt(s2, D)].filter(q => inside(P, q));
+    return { ka, kb, ta: ivs[ka][0], tb: ivs[kb][1], pa: lp(ka, ivs[ka][0]), pb: lp(kb, ivs[kb][1]), inner };
+  }
+  // X: { poly, opening, collar, body, outE? } with all rings parallel to poly. Returns the notched opening (a hole in
+  // the frame), the collar and body with each notch's two points put in, outE to match, the notches
+  // ({ a, b, inner }) and the collar's notched column (collarN, for checks); null when a notch does not fit
+  function notchCut(X, specs, clr) {
+    const n = X.collar.length, runsC = [], runsO = [];
+    for (const sp of specs) {
+      const rc = notchRun(X.collar, sp, sp.s1 - clr, sp.s2 + clr, sp.D + clr), ro = notchRun(X.opening, sp, sp.s1, sp.s2, sp.D);
+      if (!rc || !ro) return null;
+      runsC.push(rc); runsO.push(ro);
+    }
+    // a ring with the runs cut out (cut) or only their end points put in
+    const walk = (P, runs, cut, extra) => {
+      const m = P.length, gone = new Set(), ins = new Map(), out = [];
+      runs.forEach((r, ri) => {
+        if (cut) for (let i = (r.ka + 1) % m; i !== (r.kb + 1) % m; i = (i + 1) % m) gone.add(i);
+        if (!ins.has(r.ka)) ins.set(r.ka, []); if (!ins.has(r.kb)) ins.set(r.kb, []);
+        ins.get(r.ka).push({ t: r.ta, p: r.pa, inner: cut ? r.inner : [], ri, end: 'a' });
+        ins.get(r.kb).push({ t: r.tb, p: r.pb, inner: [], ri, end: 'b' });
+      });
+      for (let i = 0; i < m; i++) {
+        if (!gone.has(i)) out.push(extra ? extra(i, null) : P[i]);
+        for (const e of (ins.get(i) || []).sort((x, y) => x.t - y.t)) { out.push(extra ? extra(i, e) : e.p); e.inner.forEach(q => out.push(q)); }
+      }
+      return out;
+    };
+    // the runs must not touch each other
+    const per = r => [r.ka + r.ta, r.kb + r.tb + (r.kb < r.ka || (r.kb === r.ka && r.tb < r.ta) ? n : 0)];
+    for (let i = 0; i < runsC.length; i++) for (let j = i + 1; j < runsC.length; j++) {
+      const [a0, a1] = per(runsC[i]), [b0, b1] = per(runsC[j]);
+      for (const sh of [-n, 0, n]) if (a0 < b1 + sh + 0.05 && b0 + sh < a1 + 0.05) return null;
+    }
+    const opening = walk(X.opening, runsO, true);
+    const collar = walk(X.collar, runsC, false);
+    const collarN = walk(X.collar, runsC, true);
+    // body points across from the collar's new points (same place along the edge)
+    const onBody = (i, p) => { const C0 = X.collar[i], C1 = X.collar[(i + 1) % n], L = Math.hypot(C1[0] - C0[0], C1[1] - C0[1]) || 1, ux = (C1[0] - C0[0]) / L, uy = (C1[1] - C0[1]) / L, t = (p[0] - C0[0]) * ux + (p[1] - C0[1]) * uy, B0 = X.body[i]; return [B0[0] + ux * t, B0[1] + uy * t]; };
+    const body = walk(X.collar, runsC, false, (i, e) => e ? onBody(i, e.p) : X.body[i]);
+    const outE = X.outE ? walk(X.collar, runsC, false, i => X.outE[i]) : null;
+    const notch = runsC.map(r => ({ a: r.pa, b: r.pb, inner: r.inner }));
+    return { opening, collar, body, outE, notch, collarN };
+  }
   // curved, twisted loft: sections shrink toward the tip while their centre follows a bending,
   // optionally spiralling path
   function setApex(c) {
@@ -1842,11 +2021,23 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       m.wallIn(p0, p1);
       capRings(m, [p1], false);           // chamber ceiling
     } else {
-      const zr = c.zr || 0;
-      const r0 = m.ring(c.collar, zr), r1 = m.ring(c.collar, zr + fr.t);
-      const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, null) : null;
-      if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
-      m.wall(r0, r1);
+      const zr = c.zr || 0, col = collarColumn(c);
+      const r1 = m.ring(c.collar, zr + fr.t);
+      if (!col) {
+        const r0 = m.ring(c.collar, zr);
+        const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, null) : null;
+        if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
+        m.wall(r0, r1);
+      } else {
+        // notches for the frame's dovetails: the column inside the frame follows the notched outline (top ring
+        // shares the collar's points), and each notch's roof is a flat bridge from one side wall to the other
+        const top = col.ring.map(q => typeof q === 'number' ? r1[q] : m.pt(q[0], q[1], zr + fr.t));
+        const bot = col.ring.map(q => typeof q === 'number' ? m.pt(c.collar[q][0], c.collar[q][1], zr) : m.pt(q[0], q[1], zr));
+        const lab = opts && opts.label && c.num ? placeLabel(c.num, col.outline, null) : null;
+        if (lab) engraveFace(m, [bot], lab, zr, 0.4); else capRings(m, [bot], false);
+        m.wall(bot, top);
+        col.roofs.forEach(rf => capRings(m, [rf.map(q => q.pos !== undefined ? top[q.pos] : r1[q.collar])], false));
+      }
       prev = baseRing(m, c, r1, zr + fr.t);
     }
     if (c.wrap) extrudeGeom(m, c.wrap, c.zr || 0, c.z0 - 0.01);   // skirt over the hidden outer rail, down to the wall
@@ -1886,6 +2077,31 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const a = m.pt(c.apex[0], c.apex[1], c.zApex);
     for (let i = 0; i < prev.length; i++) m.tri(prev[i], prev[(i + 1) % prev.length], a);
     return m;
+  }
+  // the collar's column inside the frame when the piece has dovetail notches. ring: collar indices (numbers) and
+  // the notches' inner corners (points); roofs: for each notch its outline, as {pos} (place in ring) or {collar}
+  // (a collar point over the notch, only on the top ring); outline: the column's outline
+  function collarColumn(c) {
+    if (!c.notch || !c.notch.length) return null;
+    const C = c.collar, n = C.length, near = (p, q) => Math.abs(p[0] - q[0]) < 1e-6 && Math.abs(p[1] - q[1]) < 1e-6;
+    const ns = [], skip = new Set();
+    for (const nt of c.notch) {
+      const ia = C.findIndex(p => near(p, nt.a)), ib = C.findIndex(p => near(p, nt.b));
+      if (ia < 0 || ib < 0 || ia === ib) return null;
+      const mid = [];
+      for (let j = (ia + 1) % n; j !== ib; j = (j + 1) % n) { mid.push(j); skip.add(j); }
+      ns.push({ ia, ib, mid, nt });
+    }
+    const ring = [], pos = new Map();
+    for (let i = 0; i < n; i++) {
+      if (skip.has(i)) continue;
+      pos.set(i, ring.length); ring.push(i);
+      const st = ns.find(q => q.ia === i);
+      if (st) { st.inPos = st.nt.inner.map((q, k) => ring.length + k); st.nt.inner.forEach(q => ring.push(q)); }
+    }
+    if (ns.some(q => !pos.has(q.ib) || !q.inPos)) return null;
+    const roofs = ns.map(q => [{ pos: pos.get(q.ia) }, ...q.mid.map(j => ({ collar: j })), { pos: pos.get(q.ib) }, ...q.inPos.slice().reverse().map(p => ({ pos: p }))]);   // CCW from above
+    return { ring, roofs, outline: ring.map(q => typeof q === 'number' ? C[q] : q) };
   }
   // from the top of the collar (ring rc at height zc) up to the base of the body: the bevel. On the panel's edge
   // (hidden frame) the underside stays flat over the rail up to the ledge, since the skirt holds it there.
@@ -2077,7 +2293,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     rng, area, centroid, ccw, bbox, inside, clipConvex, simplify, inset, isConvexCCW,
     makeShape, tessellate, surfaceAt, fieldAt, modsAt, build, setApex, subdivide, convexHull,
     Mesh, pieceMesh, tileMesh, placeLabel, textGlyphs, prism, annulus, meshVolume, checkManifold,
-    packPlates, extrudeGeom, stlBinary, model3mf, CONTENT_TYPES, RELS, localize, esc
+    packPlates, extrudeGeom, stlBinary, model3mf, CONTENT_TYPES, RELS, localize, esc, collarColumn, notchCut
   };
 })(typeof window !== 'undefined' ? window : globalThis);
 
@@ -2280,11 +2496,21 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
     const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.2;
-    // the seam between cell 3 and 4 gets the wide rib and a dovetail, exactly like the real frame
-    const openings = cells.map((c, i) => E.inset(c, [half, i === 2 ? jh2 : half, half, i === 3 ? jh2 : half]));
+    // the seam between cell 3 and 4 carries a dovetail, exactly like the real frame: the normal rib, widened
+    // only around the tab, where the two pieces' collars get a notch; the two halves meet with the dovetail play
     const xs = -W / 2 + rim + 3 * cs;
-    const left = [[-W / 2, -H / 2], [xs, -H / 2], [xs, H / 2], [-W / 2, H / 2]], right = [[xs, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs, H / 2]];
-    const w1 = fr.knobW ?? 5, w2 = w1 + 2.4, jh = Math.max(1.6, jh2 - 1.6);
+    const left = [[-W / 2, -H / 2], [xs - jc / 2, -H / 2], [xs - jc / 2, H / 2], [-W / 2, H / 2]], right = [[xs + jc / 2, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs + jc / 2, H / 2]];
+    const w1 = fr.knobW ?? 5, w2 = w1 + 2.4, jh = Math.max(1.6, jh2 - 1.6), km = 1.0;
+    const parts = cells.map((c, i) => {
+      const X = { poly: c, opening: E.inset(c, half), collar: E.inset(E.inset(c, half), clrs[i]), body: E.inset(c, fr.gap / 2) };
+      // cell 3 owns the tab (its right edge, index 1), cell 4 takes the socket (its left edge, index 3)
+      const nt = i === 2 ? { o: c[1], uk: [0, 1], nIn: [-1, 0], s1: cs / 2 - (w1 + 2 * (jc + km)) / 2, s2: cs / 2 + (w1 + 2 * (jc + km)) / 2, D: 1.2 + km }
+        : i === 3 ? { o: c[3], uk: [0, -1], nIn: [1, 0], s1: cs / 2 - (w2 + 2 * (jc + km)) / 2, s2: cs / 2 + (w2 + 2 * (jc + km)) / 2, D: jh + jc + km } : null;
+      if (!nt || nt.D <= half) return X;
+      const r = E.notchCut(X, [nt], clrs[i]);
+      return r ? Object.assign(X, { opening: r.opening, collar: r.collar, body: r.body, notch: r.notch }) : X;
+    });
+    const openings = parts.map(X => X.opening);
     const dt = (w1_, w2_, h_, back) => [[xs - back, -w1_ / 2], [xs - back, w1_ / 2], [xs, w1_ / 2], [xs + h_, w2_ / 2], [xs + h_, -w2_ / 2], [xs, -w1_ / 2]].reverse();
     const holes = openings.map(o => [ring(o)]);
     const gA = PCl.difference(PCl.union([ring(left)], [ring(E.ccw(dt(w1, w2, jh, 1.2)))]), ...holes);
@@ -2294,9 +2520,9 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const merged = new E.Mesh().append(mA, objs[0].x, objs[0].y, 0).append(mB, objs[1].x, objs[1].y, 0);
     const lines = [];
     cells.forEach((c, i) => {
-      const op = openings[i], clr = clrs[i];
-      const chamfer = Math.max(0.6, (i === 2 || i === 3 ? jh2 : half) + clr - fr.gap / 2);
-      const pc = { collar: E.inset(op, clr), body: E.inset(c, fr.gap / 2), apex: E.centroid(c), z0: fr.t + chamfer, zApex: fr.t + chamfer + 6 + i * 3, layers: [] };
+      const clr = clrs[i];
+      const chamfer = Math.max(0.6, half + clr - fr.gap / 2);
+      const pc = { collar: parts[i].collar, body: parts[i].body, notch: parts[i].notch, apex: E.centroid(c), z0: fr.t + chamfer, zApex: fr.t + chamfer + 6 + i * 3, layers: [] };
       const m = E.localize(E.pieceMesh(pc, fr));
       const x = (pr.bedW - W) / 2 + i * (cs + 6), y = 20;
       objs.push({ name: `fit-${clr.toFixed(2)}mm`, mesh: m, x, y });

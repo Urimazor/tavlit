@@ -1,7 +1,7 @@
-const { chromium } = require('playwright');
+const { chromium } = require(process.env.PLAYWRIGHT || 'playwright');
 const path = require('path'), fs = require('fs');
 const NM = path.join(__dirname, '..', 'node_modules');
-const OUT = '/tmp/claude-0/-home-claude/1fe8ce36-663b-5ffd-88a5-bcbb8067cca1/scratchpad/';
+const OUT = (process.env.OUT || require('os').tmpdir()) + '/';
 const map = [
   [/three@0\.160\.0\/(.*)$/, m => path.join(NM, 'three', m[1])],
   [/d3-delaunay@6\.0\.4\/(.*)$/, m => path.join(NM, 'd3-delaunay', m[1])],
