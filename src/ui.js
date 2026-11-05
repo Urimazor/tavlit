@@ -663,7 +663,7 @@ function update3D() {
 // between the camera and the plane is cut away, and the plane stays put while the model is turned and zoomed.
 const cut = (() => {
   const plane = new THREE.Plane(), n = new THREE.Vector3();
-  let on = false, t = 0.5;
+  let on = false, t = 0.5, mode = 'view';   // view: faces the camera · base: upright on the base, parallel to the panel side nearest the viewer
   const edge = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(24), 3)),
     new THREE.LineBasicMaterial({ color: 0xf0b429, transparent: true, opacity: 0.9, depthTest: false }));
   edge.renderOrder = 10; edge.visible = false; scene.add(edge);
@@ -698,9 +698,15 @@ const cut = (() => {
     invalidate();
   }
   function setCaps(vis) { [frameGroup, pieceGroup].forEach(g => g.traverse(o => { if (o.userData.cap) o.visible = vis; })); }
+  function aim() {
+    camera.getWorldDirection(n);
+    if (mode === 'base') {   // drop the depth part and snap to the nearest side of the panel (x or y), so the cut stands square on the base
+      n.set(Math.abs(n.x) >= Math.abs(n.y) ? Math.sign(n.x) || 1 : 0, Math.abs(n.x) >= Math.abs(n.y) ? 0 : Math.sign(n.y) || 1, 0);
+    }
+  }
   function set(v) {
     on = v;
-    if (on) { camera.getWorldDirection(n); clipPlanes.length = 0; clipPlanes.push(plane); refresh(); }
+    if (on) { aim(); clipPlanes.length = 0; clipPlanes.push(plane); refresh(); }
     else clipPlanes.length = 0;
     setCaps(on); edge.visible = on;
     $('#sectionBtn').setAttribute('aria-pressed', String(on)); $('#sectionBar').hidden = !on;
@@ -709,6 +715,8 @@ const cut = (() => {
   return {
     set, refresh, get on() { return on; },
     depth(v) { t = v; refresh(); },
+    mode(m) { mode = m; document.querySelectorAll('#sectionMode [data-mode]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.mode === m))); if (on) { aim(); refresh(); } },
+    reaim() { if (on) { aim(); refresh(); } },
     edges(v) { edge.visible = on && v; invalidate(); },
     get plane() { return plane; },
   };
@@ -873,7 +881,8 @@ $('#freeOrbit').addEventListener('click', () => setFreeOrbit(!nav.free));
 $('#sectionBtn').addEventListener('click', () => cut.set(!cut.on));
 $('#sectionDepth').addEventListener('input', e => cut.depth(+e.target.value / 100));
 $('#sectionEdge').addEventListener('change', e => cut.edges(e.target.checked));
-$('#sectionReset').addEventListener('click', () => { cut.set(false); cut.set(true); });
+$('#sectionReset').addEventListener('click', () => cut.reaim());
+document.querySelectorAll('#sectionMode [data-mode]').forEach(b => b.addEventListener('click', () => cut.mode(b.dataset.mode)));
 $('#navHelpBtn').addEventListener('click', e => { e.stopPropagation(); showHelp($('#navHelp').hidden); });
 document.addEventListener('pointerdown', e => { if (!$('#navHelp').hidden && !e.target.closest('#navHelp,#navHelpBtn')) showHelp(false); });
 document.addEventListener('keydown', e => {

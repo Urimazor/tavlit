@@ -32,6 +32,7 @@
 html, body { height: 100%; }
 body { background: var(--bg); color: var(--ink); font-family: var(--f-body); font-size: 14px; line-height: 1.45; }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }   /* the page ships without a reset, so floating panels with display:flex need this to really hide */
 button, input, select { font: inherit; color: inherit; }
 button { cursor: pointer; }
 :focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }

@@ -27,7 +27,7 @@ const ok = (c, msg) => { console.log((c ? 'ok   ' : 'FAIL ') + msg); if (!c) fai
       if (u.startsWith('file:')) return route.continue();
       return route.abort();
     });
-    await page.goto('file://' + path.join(__dirname, '..', 'dist', 'tavlit-local.html'));
+    await page.goto('file://' + path.join(__dirname, '..', 'dist', process.env.PAGE || 'tavlit-local.html'));
     await page.waitForFunction(() => window.__tavlit && window.__tavlit.model, null, { timeout: 30000 });
     await page.waitForTimeout(900);
     return page;
@@ -111,9 +111,10 @@ const ok = (c, msg) => { console.log((c ? 'ok   ' : 'FAIL ') + msg); if (!c) fai
   ok((await S(page)).yaw === sk.yaw, 'typing in a field leaves the view alone');
   await page.evaluate(() => document.activeElement.blur());
   // section plane
+  ok(await page.$eval('#sectionBar', e => getComputedStyle(e).display === 'none'), 'section bar hidden before the cut is on');
   await page.keyboard.press('0'); await page.waitForTimeout(650);
   await page.click('#sectionBtn'); await page.waitForTimeout(300);
-  ok(!(await page.$eval('#sectionBar', e => e.hidden)), 'section bar shows');
+  ok(await page.$eval('#sectionBar', e => getComputedStyle(e).display !== 'none'), 'section bar shows');
   await page.screenshot({ path: OUT + 'sec-50.png' });
   await page.$eval('#sectionDepth', e => { e.value = 30; e.dispatchEvent(new Event('input')); }); await page.waitForTimeout(300);
   await page.screenshot({ path: OUT + 'sec-30.png' });
@@ -126,8 +127,13 @@ const ok = (c, msg) => { console.log((c ? 'ok   ' : 'FAIL ') + msg); if (!c) fai
   // a pick on the cut side lands on or beyond the plane
   const ph = await page.evaluate(([x, y]) => { const p = __tavlit.nav.pick(x, y); return p ? __tavlit.cut.plane.distanceToPoint(p) : 1; }, [cx, cy]);
   ok(ph >= -0.02, 'picking skips cut-away geometry');
+  await page.click('#sectionMode [data-mode=base]'); await page.waitForTimeout(300);
+  const nb = await page.evaluate(() => __tavlit.cut.plane.normal.toArray());
+  ok(nb[2] === 0 && Math.abs(Math.abs(nb[0]) + Math.abs(nb[1]) - 1) < 1e-9, 'upright cut stands square on the base ' + JSON.stringify(nb));
+  await page.screenshot({ path: OUT + 'sec-base.png' });
+  await page.click('#sectionMode [data-mode=view]');
   await page.click('#sectionBtn'); await page.waitForTimeout(200);
-  ok(await page.$eval('#sectionBar', e => e.hidden), 'section off hides the bar');
+  ok(await page.$eval('#sectionBar', e => getComputedStyle(e).display === 'none'), 'section off really hides the bar');
   ok(await page.evaluate(() => !__tavlit.cut.on), 'section off');
   // touch: pinch zoom + pan
   const tp = await open({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true, colorScheme: 'dark' });

@@ -62,11 +62,15 @@
     <div id="view3d"></div>
     <div class="pivot" id="pivot" hidden></div>
     <div class="section-bar" id="sectionBar" hidden>
+      <div class="seg" role="group" aria-label="סוג החתך" id="sectionMode">
+        <button data-mode="view" aria-pressed="true" title="המישור מקביל למסך, מול כיוון המבט">מול המבט</button>
+        <button data-mode="base" aria-pressed="false" title="המישור עומד ניצב לבסיס, מקביל לצלע של הפאנל הקרובה ביותר למבט">ניצב לבסיס</button>
+      </div>
       <label for="sectionDepth">עומק החתך</label>
       <input type="range" dir="ltr" id="sectionDepth" min="0" max="100" step="0.5" value="50">
       <output id="sectionVal">50%</output>
       <label class="section-edge"><input type="checkbox" id="sectionEdge" checked> מסגרת המישור</label>
-      <button id="sectionReset" class="icon-btn" title="יישר את המישור מחדש למבט הנוכחי">יישר למבט</button>
+      <button id="sectionReset" class="icon-btn" title="כוון את המישור מחדש לפי המבט הנוכחי">יישר למבט</button>
     </div>
     <div class="nav-help" id="navHelp" hidden>
       <h3>שליטה בתצוגה</h3>
@@ -94,7 +98,7 @@
         <dt>שתי אצבעות</dt><dd>הזזה וצביטה לזום, ובמצב חופשי סיבוב שלהן מגלגל</dd>
         <dt>הקשה כפולה</dt><dd>מיקוד בנקודה, או התאמה כשמקישים על הרקע</dd>
       </dl>
-      <p>"חתך" מציב מישור שניצב לכיוון המבט באותו רגע. הסליידר מזיז אותו לעומק המודל, ופני החתך נצבעים בגוון כהה של צבע החלק. אפשר לסובב ולהתקרב והמישור נשאר במקומו. "יישר למבט" מציב אותו מחדש מול המבט הנוכחי.</p>
+      <p>"חתך" מציב מישור שניצב לכיוון המבט באותו רגע. הסליידר מזיז אותו לעומק המודל, ופני החתך נצבעים בגוון כהה של צבע החלק. אפשר לסובב ולהתקרב והמישור נשאר במקומו. "מול המבט": המישור מקביל למסך. "ניצב לבסיס": המישור עומד ישר על הבסיס, מקביל לצלע של הפאנל הקרובה למבט. "יישר למבט" מכוון אותו מחדש לפי המבט הנוכחי.</p>
       <p>במצב רגיל הסיבוב הוא סביב הציר של הפאנל עצמו, כמו משטח ההדפסה ב־PrusaSlicer: גרירה לצדדים מקיפה את הפאנל לאורך השוליים שלו, גרירה למעלה ולמטה מטה בין מבט ישר לפנים לבין מבט מהצד, והפאנל לא נוטה. במצב "חופשי" אפשר להגיע לכל זווית, כולל הפוך.</p>
     </div>
     <div id="viewmap" hidden></div>
