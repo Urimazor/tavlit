@@ -51,6 +51,7 @@
       <div class="seg" role="group" aria-label="ניווט">
         <button id="fitView" title="התאם את כל המודל לחלון (מקש F)">התאם</button>
         <button id="freeOrbit" aria-pressed="false" title="סיבוב חופשי: בלי נעילת אופק, עם גלגול (מקש R)">חופשי</button>
+        <button id="sectionBtn" aria-pressed="false" title="חתך: מישור שניצב למבט הנוכחי חותך את המודל (מקש C)">חתך</button>
         <button id="navHelpBtn" aria-pressed="false" aria-label="עזרה לשליטה בתצוגה" title="עזרה לשליטה בתצוגה (מקש ?)">?</button>
       </div>
       <div class="seg" role="group" aria-label="מה להציג">
@@ -60,6 +61,13 @@
     </div>
     <div id="view3d"></div>
     <div class="pivot" id="pivot" hidden></div>
+    <div class="section-bar" id="sectionBar" hidden>
+      <label for="sectionDepth">עומק החתך</label>
+      <input type="range" dir="ltr" id="sectionDepth" min="0" max="100" step="0.5" value="50">
+      <output id="sectionVal">50%</output>
+      <label class="section-edge"><input type="checkbox" id="sectionEdge" checked> מסגרת המישור</label>
+      <button id="sectionReset" class="icon-btn" title="יישר את המישור מחדש למבט הנוכחי">יישר למבט</button>
+    </div>
     <div class="nav-help" id="navHelp" hidden>
       <h3>שליטה בתצוגה</h3>
       <dl>
@@ -78,6 +86,7 @@
         <dt>+ / −</dt><dd>זום</dd>
         <dt>F</dt><dd>התאמה לחלון</dd>
         <dt>R</dt><dd>סיבוב חופשי או זקוף</dd>
+        <dt>C</dt><dd>חתך: הדלקה וכיבוי</dd>
       </dl>
       <h3>מגע</h3>
       <dl>
@@ -85,6 +94,7 @@
         <dt>שתי אצבעות</dt><dd>הזזה וצביטה לזום, ובמצב חופשי סיבוב שלהן מגלגל</dd>
         <dt>הקשה כפולה</dt><dd>מיקוד בנקודה, או התאמה כשמקישים על הרקע</dd>
       </dl>
+      <p>"חתך" מציב מישור שניצב לכיוון המבט באותו רגע. הסליידר מזיז אותו לעומק המודל, ופני החתך נצבעים בגוון כהה של צבע החלק. אפשר לסובב ולהתקרב והמישור נשאר במקומו. "יישר למבט" מציב אותו מחדש מול המבט הנוכחי.</p>
       <p>במצב רגיל הסיבוב הוא סביב הציר של הפאנל עצמו, כמו משטח ההדפסה ב־PrusaSlicer: גרירה לצדדים מקיפה את הפאנל לאורך השוליים שלו, גרירה למעלה ולמטה מטה בין מבט ישר לפנים לבין מבט מהצד, והפאנל לא נוטה. במצב "חופשי" אפשר להגיע לכל זווית, כולל הפוך.</p>
     </div>
     <div id="viewmap" hidden></div>

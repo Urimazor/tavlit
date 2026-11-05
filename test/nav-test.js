@@ -110,6 +110,25 @@ const ok = (c, msg) => { console.log((c ? 'ok   ' : 'FAIL ') + msg); if (!c) fai
   await page.focus('#designName'); await page.keyboard.press('3');
   ok((await S(page)).yaw === sk.yaw, 'typing in a field leaves the view alone');
   await page.evaluate(() => document.activeElement.blur());
+  // section plane
+  await page.keyboard.press('0'); await page.waitForTimeout(650);
+  await page.click('#sectionBtn'); await page.waitForTimeout(300);
+  ok(!(await page.$eval('#sectionBar', e => e.hidden)), 'section bar shows');
+  await page.screenshot({ path: OUT + 'sec-50.png' });
+  await page.$eval('#sectionDepth', e => { e.value = 30; e.dispatchEvent(new Event('input')); }); await page.waitForTimeout(300);
+  await page.screenshot({ path: OUT + 'sec-30.png' });
+  const pl = await page.evaluate(() => [__tavlit.cut.plane.normal.toArray(), __tavlit.cut.plane.constant]);
+  // turn the model; the plane stays where it was
+  await page.mouse.move(cx, cy); await page.mouse.down(); await page.mouse.move(cx - 260, cy - 40, { steps: 10 }); await page.mouse.up(); await page.waitForTimeout(1500);
+  const pl2 = await page.evaluate(() => [__tavlit.cut.plane.normal.toArray(), __tavlit.cut.plane.constant]);
+  ok(JSON.stringify(pl) === JSON.stringify(pl2), 'plane stays fixed while orbiting');
+  await page.screenshot({ path: OUT + 'sec-turned.png' });
+  // a pick on the cut side lands on or beyond the plane
+  const ph = await page.evaluate(([x, y]) => { const p = __tavlit.nav.pick(x, y); return p ? __tavlit.cut.plane.distanceToPoint(p) : 1; }, [cx, cy]);
+  ok(ph >= -0.02, 'picking skips cut-away geometry');
+  await page.click('#sectionBtn'); await page.waitForTimeout(200);
+  ok(await page.$eval('#sectionBar', e => e.hidden), 'section off hides the bar');
+  ok(await page.evaluate(() => !__tavlit.cut.on), 'section off');
   // touch: pinch zoom + pan
   const tp = await open({ viewport: { width: 400, height: 860 }, hasTouch: true, isMobile: true, colorScheme: 'dark' });
   const tb = await (await tp.$('#view3d canvas')).boundingBox();

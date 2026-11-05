@@ -120,6 +120,11 @@ button { cursor: pointer; }
 #view3d canvas.grabbing { cursor: grabbing; }
 #view3d canvas.panning { cursor: move; }
 .seg button#navHelpBtn { font-weight: 600; min-width: 34px; }
+.section-bar { position: absolute; z-index: 3; bottom: 34px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.14); font-size: 12.5px; max-width: calc(100% - 24px); }
+.section-bar input[type=range] { width: min(320px, 50vw); accent-color: var(--accent); }
+.section-bar output { font-family: var(--f-mono); min-width: 3.2em; direction: ltr; text-align: center; }
+.section-bar .section-edge { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); }
+.section-bar .icon-btn { padding: 4px 10px; font-size: 12.5px; }
 .pivot { position: absolute; z-index: 2; width: 12px; height: 12px; margin: -6px 0 0 -6px; border-radius: 50%; border: 2px solid var(--accent); background: rgba(255,255,255,.55); box-shadow: 0 0 0 1px rgba(0,0,0,.35); pointer-events: none; left: 0; top: 0; }
 .nav-help { position: absolute; z-index: 4; top: 54px; inset-inline-end: 12px; width: min(440px, calc(100% - 24px)); max-height: calc(100% - 70px); overflow: auto; background: var(--panel); color: var(--ink); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; box-shadow: 0 6px 24px rgba(0,0,0,.18); font-size: 12.5px; }
 .nav-help h3 { margin: 6px 0 4px; font-size: 13px; }
@@ -210,6 +215,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       <div class="seg" role="group" aria-label="ניווט">
         <button id="fitView" title="התאם את כל המודל לחלון (מקש F)">התאם</button>
         <button id="freeOrbit" aria-pressed="false" title="סיבוב חופשי: בלי נעילת אופק, עם גלגול (מקש R)">חופשי</button>
+        <button id="sectionBtn" aria-pressed="false" title="חתך: מישור שניצב למבט הנוכחי חותך את המודל (מקש C)">חתך</button>
         <button id="navHelpBtn" aria-pressed="false" aria-label="עזרה לשליטה בתצוגה" title="עזרה לשליטה בתצוגה (מקש ?)">?</button>
       </div>
       <div class="seg" role="group" aria-label="מה להציג">
@@ -219,6 +225,13 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     </div>
     <div id="view3d"></div>
     <div class="pivot" id="pivot" hidden></div>
+    <div class="section-bar" id="sectionBar" hidden>
+      <label for="sectionDepth">עומק החתך</label>
+      <input type="range" dir="ltr" id="sectionDepth" min="0" max="100" step="0.5" value="50">
+      <output id="sectionVal">50%</output>
+      <label class="section-edge"><input type="checkbox" id="sectionEdge" checked> מסגרת המישור</label>
+      <button id="sectionReset" class="icon-btn" title="יישר את המישור מחדש למבט הנוכחי">יישר למבט</button>
+    </div>
     <div class="nav-help" id="navHelp" hidden>
       <h3>שליטה בתצוגה</h3>
       <dl>
@@ -237,6 +250,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         <dt>+ / −</dt><dd>זום</dd>
         <dt>F</dt><dd>התאמה לחלון</dd>
         <dt>R</dt><dd>סיבוב חופשי או זקוף</dd>
+        <dt>C</dt><dd>חתך: הדלקה וכיבוי</dd>
       </dl>
       <h3>מגע</h3>
       <dl>
@@ -244,6 +258,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         <dt>שתי אצבעות</dt><dd>הזזה וצביטה לזום, ובמצב חופשי סיבוב שלהן מגלגל</dd>
         <dt>הקשה כפולה</dt><dd>מיקוד בנקודה, או התאמה כשמקישים על הרקע</dd>
       </dl>
+      <p>"חתך" מציב מישור שניצב לכיוון המבט באותו רגע. הסליידר מזיז אותו לעומק המודל, ופני החתך נצבעים בגוון כהה של צבע החלק. אפשר לסובב ולהתקרב והמישור נשאר במקומו. "יישר למבט" מציב אותו מחדש מול המבט הנוכחי.</p>
       <p>במצב רגיל הסיבוב הוא סביב הציר של הפאנל עצמו, כמו משטח ההדפסה ב־PrusaSlicer: גרירה לצדדים מקיפה את הפאנל לאורך השוליים שלו, גרירה למעלה ולמטה מטה בין מבט ישר לפנים לבין מבט מהצד, והפאנל לא נוטה. במצב "חופשי" אפשר להגיע לכל זווית, כולל הפוך.</p>
     </div>
     <div id="viewmap" hidden></div>
@@ -2609,7 +2624,9 @@ renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
 renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 host.append(renderer.domElement);
+renderer.localClippingEnabled = true;
 const scene = new THREE.Scene();
+const clipPlanes = [];   // empty, or the one section plane (see the section view below)
 const camera = new THREE.PerspectiveCamera(32, 1, 1, 20000);
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f8a, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
@@ -2689,7 +2706,7 @@ const nav = (() => {
   function pick(x, y) {
     rayAt(x, y);
     const objs = [frameGroup, pieceGroup].filter(g => g.visible);
-    const hit = ray.intersectObjects(objs, true)[0];
+    const hit = ray.intersectObjects(objs, true).find(h => !h.object.userData.cap && (!clipPlanes.length || clipPlanes[0].distanceToPoint(h.point) >= -0.01));
     if (hit) return hit.point.clone();
     if (wall.visible) {
       const p = ray.ray.intersectPlane(new THREE.Plane(V(0, 0, 1), -wall.position.z), V());
@@ -2860,7 +2877,7 @@ const nav = (() => {
     return null;
   }
   return {
-    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick,
+    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick, modelBox,
     get free() { return free; },
     set onUser(f) { onUser = f; },
     tick(now) {
@@ -2890,18 +2907,27 @@ function geomFromMesh(m) {
   return g;
 }
 function disposeGroup(gr) { gr.traverse(o => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); gr.clear(); }
+// Section caps: every part is a closed solid, so where the plane cuts it the camera looks into its inside faces.
+// Drawing those back faces in a flat, darker tone of the part's colour makes the cut read as a solid face.
+function capMaterial(hex) {
+  const c = new THREE.Color(hex), hsl = {}; c.getHSL(hsl);
+  c.setHSL(hsl.h, Math.min(1, hsl.s * 1.1), hsl.l * 0.55 + 0.04);
+  return new THREE.MeshBasicMaterial({ color: c, side: THREE.BackSide, clippingPlanes: clipPlanes });
+}
+function addCap(me, mat) { const cap = new THREE.Mesh(me.geometry, mat); cap.visible = clipPlanes.length > 0; cap.userData.cap = true; me.add(cap); }
 function update3D() {
   disposeGroup(frameGroup); disposeGroup(pieceGroup);
   if (!model) return;
   const fr = state.frame;
-  const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(fr.color), roughness: 0.75, flatShading: true });
-  model.tiles.forEach(tl => { const me = new THREE.Mesh(geomFromMesh(E.tileMesh(tl, fr)), frameMat); me.castShadow = me.receiveShadow = true; frameGroup.add(me); });
+  const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(fr.color), roughness: 0.75, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true });
+  const frameCap = capMaterial(fr.color);
+  model.tiles.forEach(tl => { const me = new THREE.Mesh(geomFromMesh(E.tileMesh(tl, fr)), frameMat); me.castShadow = me.receiveShadow = true; addCap(me, frameCap); frameGroup.add(me); });
   state.color.bands.forEach((hex, b) => {
     const merged = new E.Mesh();
     model.pieces.forEach(c => { if (c.band === b) merged.append(E.pieceMesh(c, fr)); });
     if (!merged.f.length) return;
-    const me = new THREE.Mesh(geomFromMesh(merged), new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true }));
-    me.castShadow = me.receiveShadow = true; pieceGroup.add(me);
+    const me = new THREE.Mesh(geomFromMesh(merged), new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true }));
+    me.castShadow = me.receiveShadow = true; addCap(me, capMaterial(hex)); pieceGroup.add(me);
   });
   const s = state.shape, size = Math.max(s.w, s.h);
   wall.scale.set(size * 4, size * 4, 1);
@@ -2909,8 +2935,64 @@ function update3D() {
   const sc = sun.shadow.camera; sc.left = sc.bottom = -size; sc.right = sc.top = size; sc.near = 1; sc.far = size * 4; sc.updateProjectionMatrix();
   const key = `${s.w}x${s.h}`;
   if (key !== lastSize) { lastSize = key; setCam(camMode, true); }
+  cut.refresh();
   invalidate();
 }
+// ---------- section view ----------
+// A cutting plane facing the current view: the slider pushes it from the front of the model to the back, everything
+// between the camera and the plane is cut away, and the plane stays put while the model is turned and zoomed.
+const cut = (() => {
+  const plane = new THREE.Plane(), n = new THREE.Vector3();
+  let on = false, t = 0.5;
+  const edge = new THREE.LineLoop(new THREE.BufferGeometry().setAttribute('position', new THREE.BufferAttribute(new Float32Array(24), 3)),
+    new THREE.LineBasicMaterial({ color: 0xf0b429, transparent: true, opacity: 0.9, depthTest: false }));
+  edge.renderOrder = 10; edge.visible = false; scene.add(edge);
+  function range() {
+    const b = nav.modelBox(); let lo = Infinity, hi = -Infinity;
+    for (const x of [b.min.x, b.max.x]) for (const y of [b.min.y, b.max.y]) for (const z of [b.min.z, b.max.z]) { const d = n.dot(new THREE.Vector3(x, y, z)); lo = Math.min(lo, d); hi = Math.max(hi, d); }
+    return { b, lo, hi };
+  }
+  function refresh() {
+    if (!on) return;
+    const { b, lo, hi } = range(), d = lo + (hi - lo) * t;
+    plane.set(n, -d);   // keeps the side beyond the plane, as seen from where the section was started
+    // outline: where the plane crosses the model's bounding box
+    const C = [b.min, b.max], pts = [];
+    for (let i = 0; i < 8; i++) for (let k = 0; k < 3; k++) {
+      if (i & (1 << k)) continue;
+      const a = new THREE.Vector3(C[i & 1].x, C[(i >> 1) & 1].y, C[(i >> 2) & 1].z), j = i | (1 << k);
+      const e = new THREE.Vector3(C[j & 1].x, C[(j >> 1) & 1].y, C[(j >> 2) & 1].z);
+      const da = plane.distanceToPoint(a), de = plane.distanceToPoint(e);
+      if ((da < 0) !== (de < 0)) pts.push(a.clone().lerp(e, da / (da - de)));
+    }
+    const pos = edge.geometry.attributes.position;
+    if (pts.length >= 3) {
+      const c = pts.reduce((m, p) => m.add(p), new THREE.Vector3()).divideScalar(pts.length);
+      const u = new THREE.Vector3().crossVectors(n, Math.abs(n.y) < 0.9 ? new THREE.Vector3(0, 1, 0) : new THREE.Vector3(1, 0, 0)).normalize(), w = new THREE.Vector3().crossVectors(n, u);
+      pts.sort((p, q) => Math.atan2(p.clone().sub(c).dot(w), p.clone().sub(c).dot(u)) - Math.atan2(q.clone().sub(c).dot(w), q.clone().sub(c).dot(u)));
+      pts.forEach((p, i) => pos.setXYZ(i, p.x, p.y, p.z));
+    }
+    edge.geometry.setDrawRange(0, pts.length >= 3 ? pts.length : 0);
+    pos.needsUpdate = true; edge.geometry.computeBoundingSphere();
+    $('#sectionVal').textContent = Math.round(t * 100) + '%';
+    invalidate();
+  }
+  function setCaps(vis) { [frameGroup, pieceGroup].forEach(g => g.traverse(o => { if (o.userData.cap) o.visible = vis; })); }
+  function set(v) {
+    on = v;
+    if (on) { camera.getWorldDirection(n); clipPlanes.length = 0; clipPlanes.push(plane); refresh(); }
+    else clipPlanes.length = 0;
+    setCaps(on); edge.visible = on;
+    $('#sectionBtn').setAttribute('aria-pressed', String(on)); $('#sectionBar').hidden = !on;
+    invalidate();
+  }
+  return {
+    set, refresh, get on() { return on; },
+    depth(v) { t = v; refresh(); },
+    edges(v) { edge.visible = on && v; invalidate(); },
+    get plane() { return plane; },
+  };
+})();
 function setCam(mode, jump) {
   camMode = mode;
   if (mode) nav.view(mode, jump); else nav.fit(jump);
@@ -2974,6 +3056,7 @@ function setTab(map) {
   $('#viewmap').hidden = !map; $('#view3d').style.visibility = map ? 'hidden' : 'visible';
   $('#camViews').hidden = map; $('#stageNote').textContent = map ? 'המספרים כאן זהים למספרים בפלטות. קו כחול מקווקו: גבול של אריח מסגרת.' : NAV_NOTE();
   if (map) showHelp(false);
+  $('#sectionBar').hidden = map || !cut.on;
   if (map) drawMap();
 }
 
@@ -3067,6 +3150,10 @@ function showHelp(on) { $('#navHelp').hidden = !on; $('#navHelpBtn').setAttribut
 function setFreeOrbit(on) { nav.setFree(on); $('#freeOrbit').setAttribute('aria-pressed', String(on)); toast(on ? 'סיבוב חופשי: אין נעילת אופק, Alt + גרירה מגלגל.' : 'סיבוב סביב ציר הפאנל: הפאנל לא נוטה.', 2400); }
 $('#fitView').addEventListener('click', () => { nav.fit(); camMode = null; markCam(); });
 $('#freeOrbit').addEventListener('click', () => setFreeOrbit(!nav.free));
+$('#sectionBtn').addEventListener('click', () => cut.set(!cut.on));
+$('#sectionDepth').addEventListener('input', e => cut.depth(+e.target.value / 100));
+$('#sectionEdge').addEventListener('change', e => cut.edges(e.target.checked));
+$('#sectionReset').addEventListener('click', () => { cut.set(false); cut.set(true); });
 $('#navHelpBtn').addEventListener('click', e => { e.stopPropagation(); showHelp($('#navHelp').hidden); });
 document.addEventListener('pointerdown', e => { if (!$('#navHelp').hidden && !e.target.closest('#navHelp,#navHelpBtn')) showHelp(false); });
 document.addEventListener('keydown', e => {
@@ -3074,6 +3161,7 @@ document.addEventListener('keydown', e => {
   if (e.key === 'Escape') { showHelp(false); return; }
   if (e.key === '?' || e.code === 'KeyH' || (e.code === 'Slash' && e.shiftKey)) { e.preventDefault(); showHelp($('#navHelp').hidden); return; }
   if (e.code === 'KeyR') { setFreeOrbit(!nav.free); return; }
+  if (e.code === 'KeyC') { cut.set(!cut.on); return; }
   const act = nav.key(e); if (!act) return;
   e.preventDefault();
   if (act.view) setCam(act.view); else act();
@@ -3083,6 +3171,6 @@ $('#showPieces').addEventListener('click', e => { pieceGroup.visible = !pieceGro
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', drawPlan);
 
 renderPanel(); updateUndo(); resize(); rebuild();
-window.__tavlit = { nav, get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
+window.__tavlit = { nav, cut, get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
 
 </script>
