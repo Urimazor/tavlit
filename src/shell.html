@@ -40,9 +40,18 @@
     </div>
     <div class="stage-views" id="camViews">
       <div class="seg" role="group" aria-label="זווית מצלמה">
-        <button data-cam="iso" aria-pressed="true">אלכסון</button>
-        <button data-cam="front" aria-pressed="false">חזית</button>
-        <button data-cam="side" aria-pressed="false">צד</button>
+        <button data-cam="iso" aria-pressed="true" title="אלכסון (מקש 0)">אלכסון</button>
+        <button data-cam="front" aria-pressed="false" title="חזית (מקש 3)">חזית</button>
+        <button data-cam="top" aria-pressed="false" title="מלמעלה (מקש 1)">מלמעלה</button>
+        <button data-cam="bottom" aria-pressed="false" title="מלמטה (מקש 2)">מלמטה</button>
+        <button data-cam="left" aria-pressed="false" title="משמאל (מקש 5)">שמאל</button>
+        <button data-cam="right" aria-pressed="false" title="מימין (מקש 6)">ימין</button>
+        <button data-cam="back" aria-pressed="false" title="מאחור, בלי הקיר (מקש 4)">גב</button>
+      </div>
+      <div class="seg" role="group" aria-label="ניווט">
+        <button id="fitView" title="התאם את כל המודל לחלון (מקש F)">התאם</button>
+        <button id="freeOrbit" aria-pressed="false" title="סיבוב חופשי: בלי נעילת אופק, עם גלגול (מקש R)">חופשי</button>
+        <button id="navHelpBtn" aria-pressed="false" aria-label="עזרה לשליטה בתצוגה" title="עזרה לשליטה בתצוגה (מקש ?)">?</button>
       </div>
       <div class="seg" role="group" aria-label="מה להציג">
         <button id="showFrame" aria-pressed="true">מסגרת</button>
@@ -50,9 +59,37 @@
       </div>
     </div>
     <div id="view3d"></div>
+    <div class="pivot" id="pivot" hidden></div>
+    <div class="nav-help" id="navHelp" hidden>
+      <h3>שליטה בתצוגה</h3>
+      <dl>
+        <dt>גרירה בכפתור שמאלי או אמצעי</dt><dd>סיבוב סביב נקודת המוקד</dd>
+        <dt>גרירה בכפתור ימני, או Shift + גרירה</dt><dd>הזזה (Pan)</dd>
+        <dt>גלגלת</dt><dd>זום לכיוון הסמן</dd>
+        <dt>Ctrl + גרירה</dt><dd>זום רציף אל הנקודה שנלחצה</dd>
+        <dt>לחיצה כפולה על המודל</dt><dd>מיקוד: הנקודה הופכת למרכז הסיבוב והמצלמה מתקרבת</dd>
+        <dt>לחיצה כפולה על הרקע או בכפתור האמצעי</dt><dd>התאמה לחלון</dd>
+        <dt>Alt + גרירה (במצב חופשי)</dt><dd>גלגול סביב ציר המבט</dd>
+      </dl>
+      <h3>מקלדת</h3>
+      <dl>
+        <dt>0 · 1 · 2 · 3 · 4 · 5 · 6</dt><dd>אלכסון · מלמעלה · מלמטה · חזית · גב · שמאל · ימין</dd>
+        <dt>חיצים</dt><dd>סיבוב ב־15°, ועם Shift: הזזה</dd>
+        <dt>+ / −</dt><dd>זום</dd>
+        <dt>F</dt><dd>התאמה לחלון</dd>
+        <dt>R</dt><dd>סיבוב חופשי או זקוף</dd>
+      </dl>
+      <h3>מגע</h3>
+      <dl>
+        <dt>אצבע אחת</dt><dd>סיבוב</dd>
+        <dt>שתי אצבעות</dt><dd>הזזה וצביטה לזום, ובמצב חופשי סיבוב שלהן מגלגל</dd>
+        <dt>הקשה כפולה</dt><dd>מיקוד בנקודה, או התאמה כשמקישים על הרקע</dd>
+      </dl>
+      <p>במצב רגיל הקיר נשאר זקוף, כמו ב־Blender וב־PrusaSlicer. במצב "חופשי" אפשר להגיע לכל זווית, כולל הפוך.</p>
+    </div>
     <div id="viewmap" hidden></div>
     <div class="busy" id="busy" hidden>מחשב…</div>
-    <div class="stage-note" id="stageNote">גרירה: סיבוב · Shift או כפתור ימני: הזזה · גלגלת: זום</div>
+    <div class="stage-note" id="stageNote"></div>
   </main>
 
   <footer class="bar">

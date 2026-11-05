@@ -1,5 +1,4 @@
 import * as THREE from 'three';
-import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 
 const E = window.WallEngine, K = window.WallKit, PR = window.WallPresets;
 const $ = s => document.querySelector(s);
@@ -347,8 +346,6 @@ renderer.outputColorSpace = THREE.SRGBColorSpace;
 host.append(renderer.domElement);
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(32, 1, 1, 20000);
-const controls = new OrbitControls(camera, renderer.domElement);
-controls.enableDamping = true; controls.dampingFactor = 0.12;
 scene.add(new THREE.HemisphereLight(0xffffff, 0x8a8f8a, 1.1));
 const sun = new THREE.DirectionalLight(0xffffff, 2.2);
 sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.6;
@@ -361,6 +358,259 @@ const group = new THREE.Group(); scene.add(group);
 let frameGroup = new THREE.Group(), pieceGroup = new THREE.Group();
 group.add(frameGroup, pieceGroup);
 let lastSize = null, camMode = 'iso';
+// ---------- camera navigation ----------
+// The mouse map follows what most 3D apps share (Blender, Fusion 360, SolidWorks, Onshape, PrusaSlicer, Sketchfab):
+// left or middle drag orbits, right or Shift drag pans, the wheel zooms toward the cursor, Ctrl drag zooms smoothly,
+// a double click focuses on the point under the cursor (it becomes the orbit centre), a double click on empty space
+// or with the middle button fits the model. "Upright" orbit is a turntable that keeps the wall vertical (Blender's
+// default); "free" orbit is a trackball with roll and no limit, so any angle is reachable.
+const NAV_VIEWS = {
+  iso: [Math.atan2(-0.55, 0.76), Math.asin(0.35 / Math.hypot(0.55, 0.35, 0.76))],
+  front: [0, 0], back: [Math.PI, 0], left: [-Math.PI / 2, 0], right: [Math.PI / 2, 0],
+  top: [0, Math.PI / 2], bottom: [0, -Math.PI / 2],
+};
+const nav = (() => {
+  const cv = renderer.domElement;
+  const V = (x = 0, y = 0, z = 0) => new THREE.Vector3(x, y, z);
+  const clamp = THREE.MathUtils.clamp, HALF = Math.PI / 2;
+  const target = V(0, 0, 10), q = new THREE.Quaternion(), tq = new THREE.Quaternion();
+  let dist = 1000, yaw = 0, pitch = 0, free = false, sceneR = 300;
+  let anim = null, spin = null, moved = true, pivotUntil = 0, onUser = () => {};
+  const reduce = matchMedia('(prefers-reduced-motion: reduce)');
+  const levelQ = (y, p) => new THREE.Quaternion().setFromEuler(new THREE.Euler(-p, y, 0, 'YXZ'));
+  function anglesOf(qq) {
+    const o = V(0, 0, 1).applyQuaternion(qq), p = Math.asin(clamp(o.y, -1, 1));
+    if (Math.abs(o.y) < 0.999) return { yaw: Math.atan2(o.x, o.z), pitch: p };
+    const u = V(0, 1, 0).applyQuaternion(qq);
+    return { yaw: o.y > 0 ? Math.atan2(-u.x, -u.z) : Math.atan2(u.x, u.z), pitch: p };
+  }
+  const minD = () => Math.max(6, sceneR * 0.03), maxD = () => sceneR * 30;
+  function apply() {
+    if (!free) q.copy(levelQ(yaw, pitch));
+    camera.quaternion.copy(q);
+    camera.position.copy(V(0, 0, dist).applyQuaternion(q).add(target));
+    camera.near = Math.max(0.3, dist / 80); camera.far = dist + sceneR * 14; camera.updateProjectionMatrix();
+    wall.visible = camera.position.z > wall.position.z + 0.5;   // seen from behind, the wall would hide the panel
+    moved = true;
+  }
+  function orbit(a, b) {   // a: horizontal angle, b: vertical angle (radians)
+    if (free) { q.multiply(tq.setFromAxisAngle(V(0, 1, 0), -a)).multiply(tq.setFromAxisAngle(V(1, 0, 0), -b)).normalize(); }
+    else { yaw -= a; pitch = clamp(pitch + b, -HALF, HALF); }
+    apply();
+  }
+  function roll(a) { if (!free) return; q.multiply(tq.setFromAxisAngle(V(0, 0, 1), a)).normalize(); apply(); }
+  function pan(dx, dy) {
+    const wpp = 2 * dist * Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)) / Math.max(1, cv.clientHeight);
+    target.addScaledVector(V(1, 0, 0).applyQuaternion(q), -dx * wpp).addScaledVector(V(0, 1, 0).applyQuaternion(q), dy * wpp);
+    apply();
+  }
+  function zoomAt(f, P) {
+    const nd = clamp(dist * f, minD(), maxD()); f = nd / dist;
+    if (P) target.sub(P).multiplyScalar(f).add(P);
+    dist = nd; apply();
+  }
+  const ray = new THREE.Raycaster();
+  function rayAt(x, y) {
+    const r = cv.getBoundingClientRect();
+    ray.setFromCamera(new THREE.Vector2((x - r.left) / r.width * 2 - 1, -(y - r.top) / r.height * 2 + 1), camera);
+    return ray.ray;
+  }
+  // the model point under the cursor (or the wall behind it); null over empty space
+  function pick(x, y) {
+    rayAt(x, y);
+    const objs = [frameGroup, pieceGroup].filter(g => g.visible);
+    const hit = ray.intersectObjects(objs, true)[0];
+    if (hit) return hit.point.clone();
+    if (wall.visible) {
+      const p = ray.ray.intersectPlane(new THREE.Plane(V(0, 0, 1), -wall.position.z), V());
+      if (p && Math.abs(p.x) < sceneR * 1.6 && Math.abs(p.y) < sceneR * 1.6) return p;
+    }
+    return null;
+  }
+  // the point under the cursor on the plane through the orbit centre, facing the camera
+  function planePoint(x, y) {
+    const n = V(0, 0, 1).applyQuaternion(q);
+    return rayAt(x, y).intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, target), V()) || target.clone();
+  }
+  function pointAt(x, y) { const p = pick(x, y); return p && p.distanceTo(camera.position) < dist * 4 ? p : planePoint(x, y); }
+
+  function modelBox() {
+    const b = new THREE.Box3();
+    [frameGroup, pieceGroup].forEach(g => b.expandByObject(g));
+    if (b.isEmpty()) { const s = state.shape; b.set(V(-s.w / 2, -s.h / 2, 0), V(s.w / 2, s.h / 2, 20)); }
+    return b;
+  }
+  function framing(qq) {
+    const box = modelBox(), c = box.getCenter(V()), inv = qq.clone().invert();
+    const tv = Math.tan(THREE.MathUtils.degToRad(camera.fov / 2)), th = tv * camera.aspect;
+    sceneR = Math.max(50, box.getSize(V()).length() / 2);
+    let d = 0;
+    for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+      const p = V(x, y, z).sub(c).applyQuaternion(inv);
+      d = Math.max(d, Math.abs(p.x) / th + p.z, Math.abs(p.y) / tv + p.z);
+    }
+    return { target: c, dist: Math.max(d * 1.12, minD()) };
+  }
+  function animateTo(to, ms = 450, done) {
+    spin = null;
+    const from = { target: target.clone(), dist, yaw, pitch, q: q.clone() };
+    if (!free) {   // turn the short way round
+      let dy = (to.yaw - yaw) % (2 * Math.PI); if (dy > Math.PI) dy -= 2 * Math.PI; if (dy < -Math.PI) dy += 2 * Math.PI;
+      to = { ...to, yaw: yaw + dy };
+    }
+    anim = { from, to, t0: performance.now(), ms: reduce.matches ? 0 : ms, done };
+  }
+  function step(now) {
+    const { from, to, t0, ms, done } = anim, t = ms ? Math.min(1, (now - t0) / ms) : 1, e = 1 - Math.pow(1 - t, 3);
+    target.lerpVectors(from.target, to.target, e);
+    dist = Math.exp(THREE.MathUtils.lerp(Math.log(from.dist), Math.log(to.dist), e));
+    if (free) q.slerpQuaternions(from.q, to.q, e); else { yaw = THREE.MathUtils.lerp(from.yaw, to.yaw, e); pitch = THREE.MathUtils.lerp(from.pitch, to.pitch, e); }
+    apply();
+    if (t >= 1) { anim = null; done && done(); }
+  }
+  function orient(y, p) { return { yaw: y, pitch: p, q: levelQ(y, p) }; }
+  function view(mode, jump) {
+    const [y, p] = NAV_VIEWS[mode] || NAV_VIEWS.iso, o = orient(y, p), to = { ...o, ...framing(o.q) };
+    animateTo(to, jump ? 0 : 500);
+    if (jump) step(performance.now());
+  }
+  function fit(jump) {
+    const o = free ? { yaw, pitch, q: q.clone() } : orient(yaw, pitch);
+    animateTo({ ...o, ...framing(o.q) }, jump ? 0 : 450);
+    if (jump) step(performance.now());
+  }
+  function focus(x, y) {
+    const p = pick(x, y);
+    if (!p) { fit(); onUser(); return; }
+    animateTo({ yaw, pitch, q: q.clone(), target: p, dist: clamp(dist * 0.6, minD(), maxD()) }, 450);
+    pivotUntil = performance.now() + 1400;
+    onUser();
+  }
+  function setFree(on) {
+    if (on === free) return;
+    if (on) { free = true; return; }
+    // back to upright: remove the roll smoothly, then continue as a turntable
+    const a = anglesOf(q), o = orient(a.yaw, a.pitch);
+    animateTo({ ...o, target: target.clone(), dist }, 400, () => { free = false; yaw = a.yaw; pitch = a.pitch; apply(); });
+  }
+
+  // ---- pointer input (mouse, pen and touch share one path) ----
+  const ptrs = new Map();
+  let drag = null, gest = null, lastTap = null;
+  const rotK = () => Math.PI * 1.4 / Math.max(200, cv.clientHeight);
+  cv.addEventListener('contextmenu', e => e.preventDefault());
+  cv.addEventListener('mousedown', e => { if (e.button === 1) e.preventDefault(); });   // no autoscroll on middle click
+  function touchBase() {
+    const ps = [...ptrs.values()];
+    if (ps.length === 1) { gest = { n: 1, x: ps[0].x, y: ps[0].y }; return; }
+    const [a, b] = ps, mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2;
+    gest = { n: 2, mx, my, d: Math.hypot(a.x - b.x, a.y - b.y) || 1, ang: Math.atan2(b.y - a.y, b.x - a.x), P: pointAt(mx, my) };
+  }
+  cv.addEventListener('pointerdown', e => {
+    cv.setPointerCapture(e.pointerId); anim = null; spin = null;
+    ptrs.set(e.pointerId, { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, t0: performance.now(), button: e.button, type: e.pointerType });
+    if (e.pointerType === 'touch') { touchBase(); drag = null; return; }
+    if (ptrs.size > 1) return;
+    const mode = (e.button === 2 || e.shiftKey) ? 'pan' : (e.ctrlKey || e.metaKey) ? 'zoom' : (e.altKey && free) ? 'roll' : 'orbit';
+    drag = { mode, x: e.clientX, y: e.clientY, P: mode === 'zoom' ? pointAt(e.clientX, e.clientY) : null, vx: 0, vy: 0, t: 0 };
+    cv.classList.add(mode === 'pan' ? 'panning' : 'grabbing');
+    pivotUntil = Infinity;
+  });
+  cv.addEventListener('pointermove', e => {
+    const pt = ptrs.get(e.pointerId); if (!pt) return;
+    pt.x = e.clientX; pt.y = e.clientY;
+    if (pt.type === 'touch') {
+      if (!gest) return;
+      if (gest.n === 1 && ptrs.size === 1) { const k = rotK(); orbit((pt.x - gest.x) * k, (pt.y - gest.y) * k); gest.x = pt.x; gest.y = pt.y; }
+      else if (gest.n === 2 && ptrs.size >= 2) {
+        const [a, b] = [...ptrs.values()], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, d = Math.hypot(a.x - b.x, a.y - b.y) || 1, ang = Math.atan2(b.y - a.y, b.x - a.x);
+        pan(mx - gest.mx, my - gest.my);
+        zoomAt(gest.d / d, gest.P);
+        let da = ang - gest.ang; if (da > Math.PI) da -= 2 * Math.PI; if (da < -Math.PI) da += 2 * Math.PI;
+        roll(da);
+        Object.assign(gest, { mx, my, d, ang });
+      }
+      pivotUntil = performance.now() + 700; onUser();
+      return;
+    }
+    if (!drag) return;
+    const dx = e.clientX - drag.x, dy = e.clientY - drag.y; drag.x = e.clientX; drag.y = e.clientY;
+    if (!dx && !dy) return;
+    if (drag.mode === 'orbit') { const k = rotK(); orbit(dx * k, dy * k); drag.vx = dx * k; drag.vy = dy * k; drag.t = performance.now(); }
+    else if (drag.mode === 'pan') pan(dx, dy);
+    else if (drag.mode === 'zoom') zoomAt(Math.exp(dy * 0.006), drag.P);
+    else if (drag.mode === 'roll') {
+      const r = cv.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      roll(Math.atan2(e.clientY - cy, e.clientX - cx) - Math.atan2(e.clientY - dy - cy, e.clientX - dx - cx));
+    }
+    onUser();
+  });
+  function endPointer(e) {
+    const pt = ptrs.get(e.pointerId); if (!pt) return;
+    ptrs.delete(e.pointerId);
+    const now = performance.now(), still = Math.hypot(pt.x - pt.x0, pt.y - pt.y0) < 6 && now - pt.t0 < 350;
+    if (pt.type === 'touch') { if (ptrs.size) touchBase(); else gest = null; }
+    else if (drag) {
+      if (drag.mode === 'orbit' && now - drag.t < 60 && !reduce.matches) spin = { a: drag.vx, b: drag.vy };
+      drag = null; cv.classList.remove('grabbing', 'panning');
+    }
+    if (!ptrs.size) pivotUntil = now + 700;
+    if (e.type !== 'pointerup' || !still || ptrs.size) { if (!still) lastTap = null; return; }
+    if (lastTap && now - lastTap.t < 340 && Math.hypot(pt.x - lastTap.x, pt.y - lastTap.y) < 24 && lastTap.button === pt.button) {
+      lastTap = null; spin = null;
+      if (pt.button === 1) { fit(); onUser(); } else if (pt.button === 0) focus(pt.x, pt.y);
+    } else lastTap = { t: now, x: pt.x, y: pt.y, button: pt.button };
+  }
+  cv.addEventListener('pointerup', endPointer);
+  cv.addEventListener('pointercancel', endPointer);
+  let wheelP = null, wheelT = 0, wx = 0, wy = 0;
+  cv.addEventListener('wheel', e => {
+    e.preventDefault(); anim = null; spin = null;
+    let d = e.deltaY * (e.deltaMode === 1 ? 33 : e.deltaMode === 2 ? 400 : 1);
+    if (e.ctrlKey) d *= 2.5;   // trackpad pinch arrives as Ctrl + small wheel steps
+    const now = performance.now();
+    if (!wheelP || now - wheelT > 260 || Math.hypot(e.clientX - wx, e.clientY - wy) > 6) { wheelP = pointAt(e.clientX, e.clientY); wx = e.clientX; wy = e.clientY; }
+    wheelT = now;
+    zoomAt(Math.exp(clamp(d, -240, 240) * 0.0015), wheelP);
+    pivotUntil = now + 600; onUser();
+  }, { passive: false });
+
+  // ---- keyboard (PrusaSlicer's number keys for the views) ----
+  const KEYVIEW = { 0: 'iso', 1: 'top', 2: 'bottom', 3: 'front', 4: 'back', 5: 'left', 6: 'right' };
+  function key(e) {
+    const k = e.code.replace(/^(Digit|Numpad)/, ''), sh = e.shiftKey, ROT = Math.PI / 12;
+    if (k in KEYVIEW && k.length === 1) return { view: KEYVIEW[k] };
+    if (e.code === 'KeyF' || e.code === 'Home' || e.code === 'NumpadDecimal') return () => { fit(); onUser(); };
+    if (e.code === 'ArrowLeft') return () => { sh ? pan(-40, 0) : orbit(-ROT, 0); onUser(); };
+    if (e.code === 'ArrowRight') return () => { sh ? pan(40, 0) : orbit(ROT, 0); onUser(); };
+    if (e.code === 'ArrowUp') return () => { sh ? pan(0, -40) : orbit(0, -ROT); onUser(); };
+    if (e.code === 'ArrowDown') return () => { sh ? pan(0, 40) : orbit(0, ROT); onUser(); };
+    if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') return () => { zoomAt(1 / 1.25, target); onUser(); };
+    if (e.key === '-' || e.code === 'Minus' || e.code === 'NumpadSubtract') return () => { zoomAt(1.25, target); onUser(); };
+    return null;
+  }
+  return {
+    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick,
+    get free() { return free; },
+    set onUser(f) { onUser = f; },
+    tick(now) {
+      if (anim) step(now);
+      else if (spin) {   // a flick keeps turning for a moment and eases out (time based, so it feels the same at any frame rate)
+        const dt = Math.min(50, now - (spin.t || now - 16)), f = dt / 16; spin.t = now;
+        orbit(spin.a * f, spin.b * f); const k = Math.exp(-dt / 110); spin.a *= k; spin.b *= k;
+        if (Math.abs(spin.a) + Math.abs(spin.b) < 2e-4) spin = null;
+      }
+      const pv = $('#pivot'), show = now < pivotUntil;
+      if (show) {
+        const p = target.clone().project(camera);
+        pv.style.transform = `translate(${(p.x + 1) / 2 * cv.clientWidth}px, ${(1 - p.y) / 2 * cv.clientHeight}px)`;
+      }
+      if (pv.hidden === show) pv.hidden = !show;
+      const m = moved; moved = false; return m;
+    },
+    get state() { return { target: target.toArray(), dist, yaw, pitch, free, q: q.toArray(), cam: camera.position.toArray() }; },
+  };
+})();
 
 function geomFromMesh(m) {
   const g = new THREE.BufferGeometry();
@@ -393,12 +643,11 @@ function update3D() {
 }
 function setCam(mode, jump) {
   camMode = mode;
-  const s = state.shape, size = Math.max(s.w, s.h * 1.15), d = size / (2 * Math.tan(THREE.MathUtils.degToRad(16))) * 1.12;
-  const dirs = { iso: [-0.55, 0.35, 0.76], front: [0, 0, 1], side: [-0.93, 0.08, 0.36] };
-  const v = new THREE.Vector3(...dirs[mode]).normalize().multiplyScalar(d);
-  camera.position.copy(v); controls.target.set(0, 0, 10); camera.near = d / 50; camera.far = d * 10; camera.updateProjectionMatrix(); controls.update(); invalidate();
-  document.querySelectorAll('#camViews [data-cam]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === mode)));
+  if (mode) nav.view(mode, jump); else nav.fit(jump);
+  markCam();
 }
+function markCam() { document.querySelectorAll('#camViews [data-cam]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === camMode))); }
+nav.onUser = () => { if (camMode) { camMode = null; markCam(); } };
 function resize() {
   const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h, false); renderer.domElement.style.width = w + 'px'; renderer.domElement.style.height = h + 'px';
@@ -408,8 +657,7 @@ new ResizeObserver(resize).observe(host);
 // render on demand: only while the camera moves or after the scene changed (keeps the CPU free for building print files)
 var dirty = 2;
 function invalidate() { dirty = 2; }
-controls.addEventListener('change', invalidate);
-(function loop() { if (controls.update()) dirty = 2; if (dirty > 0) { renderer.render(scene, camera); dirty--; } requestAnimationFrame(loop); })();
+(function loop(now) { if (nav.tick(now || performance.now())) dirty = 2; if (dirty > 0) { renderer.render(scene, camera); dirty--; } requestAnimationFrame(loop); })();
 
 // ---------- rebuild pipeline ----------
 let timer = 0;
@@ -454,7 +702,8 @@ function drawMap() { if (model) $('#viewmap').innerHTML = K.assemblySVG(model, s
 function setTab(map) {
   $('#tab3d').setAttribute('aria-pressed', String(!map)); $('#tabMap').setAttribute('aria-pressed', String(map));
   $('#viewmap').hidden = !map; $('#view3d').style.visibility = map ? 'hidden' : 'visible';
-  $('#camViews').hidden = map; $('#stageNote').textContent = map ? 'המספרים כאן זהים למספרים בפלטות. קו כחול מקווקו: גבול של אריח מסגרת.' : 'גרירה: סיבוב · Shift או כפתור ימני: הזזה · גלגלת: זום';
+  $('#camViews').hidden = map; $('#stageNote').textContent = map ? 'המספרים כאן זהים למספרים בפלטות. קו כחול מקווקו: גבול של אריח מסגרת.' : NAV_NOTE();
+  if (map) showHelp(false);
   if (map) drawMap();
 }
 
@@ -540,9 +789,28 @@ document.addEventListener('keydown', e => {
 $('#tab3d').addEventListener('click', () => setTab(false));
 $('#tabMap').addEventListener('click', () => setTab(true));
 document.querySelectorAll('#camViews [data-cam]').forEach(b => b.addEventListener('click', () => setCam(b.dataset.cam)));
+const NAV_NOTE = () => matchMedia('(pointer: coarse)').matches && !matchMedia('(pointer: fine)').matches
+  ? 'אצבע אחת: סיבוב · שתיים: הזזה וזום · הקשה כפולה: מיקוד · ? לעזרה'
+  : 'גרירה או כפתור אמצעי: סיבוב · ימני או Shift: הזזה · גלגלת: זום לסמן · לחיצה כפולה: מיקוד · F: התאמה · ? לעזרה';
+$('#stageNote').textContent = NAV_NOTE();
+function showHelp(on) { $('#navHelp').hidden = !on; $('#navHelpBtn').setAttribute('aria-pressed', String(on)); }
+function setFreeOrbit(on) { nav.setFree(on); $('#freeOrbit').setAttribute('aria-pressed', String(on)); toast(on ? 'סיבוב חופשי: אין נעילת אופק, Alt + גרירה מגלגל.' : 'סיבוב זקוף: הקיר נשאר אנכי.', 2400); }
+$('#fitView').addEventListener('click', () => { nav.fit(); camMode = null; markCam(); });
+$('#freeOrbit').addEventListener('click', () => setFreeOrbit(!nav.free));
+$('#navHelpBtn').addEventListener('click', e => { e.stopPropagation(); showHelp($('#navHelp').hidden); });
+document.addEventListener('pointerdown', e => { if (!$('#navHelp').hidden && !e.target.closest('#navHelp,#navHelpBtn')) showHelp(false); });
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey || !$('#viewmap').hidden || e.target.closest('input,select,textarea,[contenteditable],dialog')) return;
+  if (e.key === 'Escape') { showHelp(false); return; }
+  if (e.key === '?' || e.code === 'KeyH' || (e.code === 'Slash' && e.shiftKey)) { e.preventDefault(); showHelp($('#navHelp').hidden); return; }
+  if (e.code === 'KeyR') { setFreeOrbit(!nav.free); return; }
+  const act = nav.key(e); if (!act) return;
+  e.preventDefault();
+  if (act.view) setCam(act.view); else act();
+});
 $('#showFrame').addEventListener('click', e => { frameGroup.visible = !frameGroup.visible; e.currentTarget.setAttribute('aria-pressed', String(frameGroup.visible)); });
 $('#showPieces').addEventListener('click', e => { pieceGroup.visible = !pieceGroup.visible; e.currentTarget.setAttribute('aria-pressed', String(pieceGroup.visible)); });
 matchMedia('(prefers-color-scheme: dark)').addEventListener?.('change', drawPlan);
 
 renderPanel(); updateUndo(); resize(); rebuild();
-window.__tavlit = { get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
+window.__tavlit = { nav, get state() { return state; }, get model() { return model; }, rebuild, setState: s => { state = normalize(s); lastSize = null; renderPanel(); rebuild(); } };
