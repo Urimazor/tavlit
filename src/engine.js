@@ -516,6 +516,7 @@
         const body = inset(c.poly, bodyDs, concave);
         if (opening && collar && body && area(collar) > 12) {
           c.opening = opening; c.collar = collar; c.body = body; c.wrap = null;
+          c.outE = outEdge ? outEdge.map(v => v !== null) : null;   // edges on the panel's edge: the skirt holds them up
           if (outEdge) {
             // the skirt: the band of the body outside the outer rail, from the wall up to the body
             // the clipping library can trip on nearly touching edges: retry on a slightly shifted grid
@@ -549,7 +550,7 @@
     if (hideRim) {
       // a cut-off cell on the edge too small for a piece of its own joins the neighbouring piece (same frame tile),
       // so the pieces still reach the panel's edge there and the frame stays hidden
-      const keys = ['poly', 'seam', 'opening', 'collar', 'body', 'wrap', 'chamfer', 'ledge', 'c'];
+      const keys = ['poly', 'seam', 'opening', 'collar', 'body', 'wrap', 'outE', 'chamfer', 'ledge', 'c'];
       const grow = p => { const cc = centroid(p); return p.map(v => [cc[0] + (v[0] - cc[0]) * 1.002, cc[1] + (v[1] - cc[1]) * 1.002]); };
       const rg = p => { const r = q3(p); r.push(r[0]); return r; };
       for (const b of cells) {
@@ -777,7 +778,7 @@
         if (op.members.length > 1) {
           // join the two pieces: the first takes the joined outline, the second disappears
           const [A, B] = op.members;
-          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, wrap: c.wrap, chamfer: c.chamfer, ledge: c.ledge, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
+          Object.assign(A, { poly: c.poly, seam: c.seam, opening: c.opening, collar: c.collar, body: c.body, wrap: c.wrap, outE: c.outE, chamfer: c.chamfer, ledge: c.ledge, tpoly: c.tpoly, tbb: c.tbb, c: c.c, joined: B.id });
           B.kind = 'merged'; B.mergedInto = A;
           pieces.splice(pieces.indexOf(B), 1);
           c = A;
@@ -944,6 +945,7 @@
     if (ps.smooth > 0) pieces.forEach(c => {
       const q = Math.max(1, Math.ceil(36 / c.body.length));
       c.body = subdivide(c.body, q); c.collar = subdivide(c.collar, q); if (c.ledge) c.ledge = subdivide(c.ledge, q);
+      if (c.outE) c.outE = c.outE.flatMap(f => new Array(q).fill(f));
     });
     let fmax = 0;
     pieces.forEach(c => {
@@ -980,7 +982,10 @@
         delete c.cutRaw;
       });
     }
+    const maxOv = (pr.overhang ?? 45) * Math.PI / 180;
     pieces.forEach(c => {
+      // a little steeper than the limit, so the bevel's uneven corners stay under it too
+      c.bv = { t, tan: Math.tan(Math.max(0.2, maxOv - 3 * Math.PI / 180)), out: c.outE || null };
       let h = sf.minH + sf.depth * c.s;
       if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
       c.zr = 0; c.h = h; c.skirt = 0;
@@ -999,7 +1004,6 @@
       c.nb = [];
       for (let i = -2; i <= 2; i++) for (let j = -2; j <= 2; j++) (grid.get(key(gi + i, gj + j)) || []).forEach(o => { if (o !== c) c.nb.push(o); });
     });
-    const maxOv = (pr.overhang ?? 45) * Math.PI / 180;
     // hidden outer frame: no piece may lean or bulge out past the panel's edge, or the edge line breaks there
     const lineOut = hideRim ? (inset(outer, -0.05) || outer) : null;
     const pokesOut = c => !!lineOut && (!inside(lineOut, c.apex) || c.layers.some(l => l.poly.some(q => !inside(lineOut, q))));
@@ -1035,14 +1039,14 @@
         c.flare = null;
         const L1 = c.layers && c.layers[0];
         if (!c.wrap || !L1) return;
-        const B = c.body, n = B.length, zl = i => L1.zv ? L1.zv[i] : L1.z;
+        const R1 = L1.raw || L1, B = c.body, n = B.length, zl = i => R1.zv ? R1.zv[i] : R1.z;
         const reach = new Array(n).fill(null), out = new Array(n).fill(false);
         for (let i = 0; i < n; i++) {
           const j = (i + 1) % n, P = B[i], Q = B[j], L = Math.hypot(Q[0] - P[0], Q[1] - P[1]) || 1;
           const nx = (Q[1] - P[1]) / L, ny = -(Q[0] - P[0]) / L, m = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2];
           if (inside(outer, [m[0] + nx * 0.8, m[1] + ny * 0.8]) || inside(skirtIn, m)) continue;
           out[i] = true;
-          const p1 = L1.poly[i], q1 = L1.poly[j];
+          const p1 = R1.poly[i], q1 = R1.poly[j];
           const h = ((P[0] - p1[0]) * nx + (P[1] - p1[1]) * ny + (Q[0] - q1[0]) * nx + (Q[1] - q1[1]) * ny) / 2, dz = (zl(i) + zl(j)) / 2 - c.z0;
           // only faces that slope inward going up have a reach; an upright or outward-leaning face gets a plain chamfer to the line
           if (h > 0.01 && dz > 0.01) { reach[i] = Math.min(c.z0 * h / dz, 4 * c.z0); if (L > 1) dmin = Math.min(dmin, reach[i]); }
@@ -1223,10 +1227,66 @@
       for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: c.z0 + c.hb * tt, poly: section(tt).poly }); }
       c.apex = at(1); c.zApex = c.z0 + c.hb;
     }
+    clampBase(c);
     let x0 = c.apex[0], x1 = x0, y0 = c.apex[1], y1 = y0;
     const grow = poly => { for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } };
     grow(c.body); for (const l of c.layers) grow(l.poly);
     c.fp = { x0, y0, x1, y1, w: x1 - x0, h: y1 - y0 };
+  }
+  // Where a piece leaves its socket nothing may hang out further than the print angle allows (print.overhang).
+  // Every point of the piece stays inside the slope that rises from the socket's top edge at that angle. On a
+  // narrow rib the plain bevel already does; next to a wide rib (tile seams, corners of the outline) the base used to
+  // rest flat on the rib, a level overhang in the air when the piece is printed on its own. There the slope now
+  // rises from the socket edge and meets the piece's own wall a little higher up: each vertex column is followed up
+  // to where it enters the slope, and the base ring (and any layer below that point) moves there.
+  // Edges on the panel's edge (hidden frame) are held up by the skirt and keep their flat underside.
+  function clampBase(c) {
+    c.base = null;
+    const bv = c.bv, C = c.collar, n = C.length, Ls = c.layers;
+    if (!bv || !C || c.body.length !== n) return;
+    const N = [];
+    for (let e = 0; e < n; e++) {
+      const a = C[e], b = C[(e + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if ((bv.out && bv.out[e]) || L < 1e-9) { N.push(null); continue; }
+      const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L;   // outward normal (CCW)
+      N.push([nx, ny, nx * a[0] + ny * a[1]]);
+    }
+    // > 0: this point hangs out past the slope that rises from collar edge e
+    const g = (e, p) => { const q = N[e]; return q ? q[0] * p[0] + q[1] * p[1] - q[2] - (p[2] - bv.t) * bv.tan : -Infinity; };
+    const pt = (k, i) => { if (k === 0) return [c.body[i][0], c.body[i][1], c.z0]; const l = Ls[k - 1]; return [l.poly[i][0], l.poly[i][1], l.zv ? l.zv[i] : l.z]; };
+    const hit = new Array(n).fill(null);
+    let any = false;
+    for (let i = 0; i < n; i++) {
+      const E2 = [(i - 1 + n) % n, i];
+      let p = pt(0, i);
+      if (Math.max(g(E2[0], p), g(E2[1], p)) <= 1e-6) continue;
+      any = true;
+      let h = null;
+      for (let k = 1; k <= Ls.length; k++) {
+        const q = pt(k, i);
+        if (Math.max(g(E2[0], q), g(E2[1], q)) <= 0) {
+          let s = 0;   // both limits are linear along the segment: the point where the last one is met
+          for (const e of E2) { const ga = g(e, p), gb = g(e, q); if (ga > 0) s = Math.max(s, ga / (ga - gb)); }
+          h = { p: [p[0] + (q[0] - p[0]) * s, p[1] + (q[1] - p[1]) * s, p[2] + (q[2] - p[2]) * s], k };
+          break;
+        }
+        p = q;
+      }
+      hit[i] = h || { p, k: Ls.length + 1 };   // the whole column hangs out: the overhang check shrinks the lean
+    }
+    if (!any) return;
+    const base = { poly: c.body.map((v, i) => hit[i] ? [hit[i].p[0], hit[i].p[1]] : v), zv: c.body.map((v, i) => hit[i] ? hit[i].p[2] : c.z0), k: hit.map(h => h ? h.k : 0) };
+    c.base = base;
+    // layers under the meeting point collapse onto it (the mesh joins those points, so no sliver faces)
+    Ls.forEach((l, k0) => {
+      const k = k0 + 1;
+      if (!hit.some(h => h && h.k > k)) return;
+      l.raw = { poly: l.poly, zv: l.zv, z: l.z };
+      const zv = l.poly.map((q, i) => l.zv ? l.zv[i] : l.z);
+      l.poly = l.poly.map((q, i) => hit[i] && hit[i].k > k ? [hit[i].p[0], hit[i].p[1]] : q);
+      hit.forEach((h, i) => { if (h && h.k > k) zv[i] = h.p[2]; });
+      l.zv = zv; l.z = Math.max(...zv); l.zLo = Math.min(...zv);
+    });
   }
   function subdivide(p, q) {
     if (q <= 1) return p;
@@ -1276,9 +1336,9 @@
   // side faces must not overhang more than maxOv from vertical
   function overhangBad(c, maxOv) {
     // reads the rings in place (no copies): this runs for every piece on every shrink step
-    const lim = -Math.sin(maxOv), Ls = c.layers, n = c.body.length, z0 = c.z0;
-    const P = k => k === 0 ? c.body : Ls[k - 1].poly;
-    const Z = (k, i) => { if (k === 0) return z0; const l = Ls[k - 1]; return l.zv ? l.zv[i] : l.z; };
+    const lim = -Math.sin(maxOv), Ls = c.layers, n = c.body.length, z0 = c.z0, B0 = c.base;
+    const P = k => k === 0 ? (B0 ? B0.poly : c.body) : Ls[k - 1].poly;
+    const Z = (k, i) => { if (k === 0) return B0 ? B0.zv[i] : z0; const l = Ls[k - 1]; return l.zv ? l.zv[i] : l.z; };
     // the last few millimetres of a tip are too small to droop; only check sections wider than ~3 mm
     let kmax = Ls.length;
     while (kmax > 1 && Math.sqrt(Math.abs(area(P(kmax)))) < 3) kmax--;
@@ -1328,6 +1388,24 @@
   Mesh.prototype.capUp = function (r) { for (let i = 1; i < r.length - 1; i++) this.tri(r[0], r[i], r[i + 1]); };
   Mesh.prototype.capDown = function (r) { for (let i = 1; i < r.length - 1; i++) this.tri(r[0], r[i + 1], r[i]); };
   Mesh.prototype.wall = function (lo, up) { const n = lo.length; for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.quad(lo[i], lo[j], up[j], up[i]); } };
+  // like wall, for rings that share some points (same index): the collapsed triangles are left out, and each
+  // side is split along the diagonal that leaves it standing steeper (less overhang where the rings are uneven)
+  Mesh.prototype.wallJ = function (lo, up) {
+    const n = lo.length, V = this.v;
+    const nz = (a, b, c) => {
+      if (a === b || b === c || a === c) return 1;
+      const ex = V[3 * b] - V[3 * a], ey = V[3 * b + 1] - V[3 * a + 1], ez = V[3 * b + 2] - V[3 * a + 2];
+      const gx = V[3 * c] - V[3 * a], gy = V[3 * c + 1] - V[3 * a + 1], gz = V[3 * c + 2] - V[3 * a + 2];
+      const x = ey * gz - ez * gy, y = ez * gx - ex * gz, z = ex * gy - ey * gx, L = Math.sqrt(x * x + y * y + z * z);
+      return L < 1e-12 ? 1 : z / L;
+    };
+    const put = (a, b, c) => { if (a !== b && b !== c && a !== c) this.f.push(a, b, c); };
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n, a = lo[i], b = lo[j], c = up[j], d = up[i];
+      if (Math.min(nz(a, b, d), nz(b, c, d)) > Math.min(nz(a, b, c), nz(a, c, d)) + 1e-9) { put(a, b, d); put(b, c, d); }
+      else { put(a, b, c); put(a, c, d); }
+    }
+  };
   Mesh.prototype.wallIn = function (lo, up) { const n = lo.length; for (let i = 0; i < n; i++) { const j = (i + 1) % n; this.quad(lo[j], lo[i], up[i], up[j]); } };
   Mesh.prototype.append = function (m, dx = 0, dy = 0, dz = 0) {
     const o = this.v.length / 3;
@@ -1425,8 +1503,7 @@
       // nudge points that sit on a straight edge a hair inward, so the flat underside triangulates cleanly
       const cc = centroid(c.collar), nudge = (ring, k0) => ring.map((p, i) => { const d = 0.002 * (1 + ((i * 7 + k0) % 5)); const dx = cc[0] - p[0], dy = cc[1] - p[1], L = Math.hypot(dx, dy) || 1; return [p[0] + dx / L * d, p[1] + dy / L * d]; });
       const zb = fr.t, r0 = m.ring(nudge(c.collar, 0), zb);
-      const lg = c.ledge ? m.ring(c.ledge, zb) : r0; if (c.ledge) m.wall(r0, lg);   // flat underside where it rests on a wide rib
-      prev = m.ring(c.body, c.z0); m.wall(lg, prev);   // same bevel as every other piece
+      prev = baseRing(m, c, r0, zb);   // same bevel as every other piece
       const l0 = m.ring(c.pocketLo, zb), l1 = m.ring(c.pocketLo, c.pocketLoTop);
       const p0 = m.ring(c.pocket, c.pocketLoTop), p1 = m.ring(c.pocket, c.pocketTop);
       const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, c.pocketLo) : null;
@@ -1439,11 +1516,10 @@
     } else {
       const zr = c.zr || 0;
       const r0 = m.ring(c.collar, zr), r1 = m.ring(c.collar, zr + fr.t);
-      const lg = c.ledge ? m.ring(c.ledge, zr + fr.t) : null;
-      prev = m.ring(c.body, c.z0);
       const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, null) : null;
       if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
-      m.wall(r0, r1); if (lg) { m.wall(r1, lg); m.wall(lg, prev); } else m.wall(r1, prev);
+      m.wall(r0, r1);
+      prev = baseRing(m, c, r1, zr + fr.t);
     }
     if (c.wrap) extrudeGeom(m, c.wrap, c.zr || 0, c.z0 - 0.01);   // skirt over the hidden outer rail, down to the wall
     if (c.flare) {
@@ -1472,11 +1548,29 @@
         m.tri(cc[e], a[e], t[e]); m.tri(cc[e], t[e], kk[e]); m.tri(cc[e], kk[e], b[e]);
       }
     }
-    for (const l of (c.layers || [])) { const r = l.zv ? l.poly.map((p, i) => m.pt(p[0], p[1], l.zv[i])) : m.ring(l.poly, l.z); m.wall(prev, r); prev = r; }
+    const K = c.base && c.base.k;
+    (c.layers || []).forEach((l, k0) => {
+      // a point pulled down onto the base slope is the same point as the one below it
+      const r = l.poly.map((p, i) => K && K[i] > k0 + 1 ? prev[i] : m.pt(p[0], p[1], l.zv ? l.zv[i] : l.z));
+      m.wallJ(prev, r); prev = r;
+    });
     if (c.tipFlat) { m.capUp(prev); return m; }
     const a = m.pt(c.apex[0], c.apex[1], c.zApex);
     for (let i = 0; i < prev.length; i++) m.tri(prev[i], prev[(i + 1) % prev.length], a);
     return m;
+  }
+  // from the top of the collar (ring rc at height zc) up to the base of the body: the bevel. On the panel's edge
+  // (hidden frame) the underside stays flat over the rail up to the ledge, since the skirt holds it there.
+  function baseRing(m, c, rc, zc) {
+    let lo = rc;
+    if (c.ledge && c.outE) {
+      const n = c.collar.length, near = i => c.outE[i] || c.outE[(i - 1 + n) % n];
+      lo = rc.map((k, i) => near(i) ? m.pt(c.ledge[i][0], c.ledge[i][1], zc) : k);
+      m.wallJ(rc, lo);
+    }
+    const B = c.base, up = B ? B.poly.map((p, i) => m.pt(p[0], p[1], B.zv[i])) : m.ring(c.body, c.z0);
+    m.wallJ(lo, up);
+    return up;
   }
   function prism(m, poly, z0, z1) { const lo = m.ring(poly, z0), up = m.ring(poly, z1); m.capDown(lo); m.capUp(up); m.wall(lo, up); }
   function annulus(m, out, inn, z0, z1) {
