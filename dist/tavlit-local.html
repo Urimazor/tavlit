@@ -1274,6 +1274,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     pieces.forEach(c => {
       // a little steeper than the limit, so the bevel's uneven corners stay under it too
       c.bv = { t, tan: Math.tan(Math.max(0.2, maxOv - 3 * Math.PI / 180)), out: c.outE || null };
+      splitBase(c);
       let h = sf.minH + sf.depth * c.s;
       if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
       c.zr = 0; c.h = h; c.skirt = 0;
@@ -1575,6 +1576,45 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       hit.forEach((h, i) => { if (h && h.k > k) zv[i] = h.p[2]; });
       l.zv = zv; l.z = Math.max(...zv); l.zLo = Math.min(...zv);
     });
+  }
+  // A corner next to a wide rib is lifted onto the base slope (clampBase). Without help that lift would tilt the
+  // whole bottom edge of the neighbouring face, from the corner to the next one. So each face beside a wide rib gets
+  // an extra point where the slope from that rib crosses it at the base height: the face's bottom stays level up to
+  // there and only rises over the last stretch toward the rib.
+  function splitBase(c) {
+    const bv = c.bv, C = c.collar, B = c.body, n = C.length;
+    if (!bv || B.length !== n) return;
+    const reach = c.chamfer * bv.tan, out = bv.out;   // the base sits one bevel above the frame (z0 = t + chamfer)
+    const edge = [];
+    for (let e = 0; e < n; e++) {
+      const a = C[e], b = C[(e + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+      if (L < 1e-9 || (out && out[e])) { edge.push(null); continue; }
+      const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L, d = nx * a[0] + ny * a[1];
+      const step = Math.max(nx * B[e][0] + ny * B[e][1], nx * B[(e + 1) % n][0] + ny * B[(e + 1) % n][1]) - d;
+      edge.push({ nx, ny, d, wide: step > reach + 1e-6 });
+    }
+    const wide = e => !!(edge[e] && edge[e].wide);
+    if (!edge.some(Boolean) || ![...Array(n).keys()].some(wide)) return;
+    const nC = [], nB = [], nL = c.ledge ? [] : null, nO = out ? [] : null;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      nC.push(C[i]); nB.push(B[i]); if (nL) nL.push(c.ledge[i]); if (nO) nO.push(out[i]);
+      if (wide(i)) continue;
+      const cuts = [];
+      for (const e of [(i - 1 + n) % n, j]) {
+        if (!wide(e)) continue;
+        const E2 = edge[e], f = q => E2.nx * q[0] + E2.ny * q[1], fa = f(B[i]), fb = f(B[j]), target = E2.d + reach;
+        if (Math.abs(fb - fa) < 1e-9) continue;
+        const u = (target - fa) / (fb - fa);
+        if (u > 0.02 && u < 0.98) cuts.push(u);
+      }
+      cuts.sort((a, b) => a - b).forEach(u => {
+        const lp = (P, Q) => [P[0] + (Q[0] - P[0]) * u, P[1] + (Q[1] - P[1]) * u];
+        nC.push(lp(C[i], C[j])); nB.push(lp(B[i], B[j])); if (nL) nL.push(lp(c.ledge[i], c.ledge[j])); if (nO) nO.push(out[i]);
+      });
+    }
+    if (nC.length === n) return;
+    c.collar = nC; c.body = nB; if (nL) c.ledge = nL; if (nO) { c.outE = nO; bv.out = nO; }
   }
   function subdivide(p, q) {
     if (q <= 1) return p;
