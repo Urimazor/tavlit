@@ -18,7 +18,12 @@ function stlOpenEdges(buf) {
   const m = WallEngine.build(st);
   const r = await WallKit.buildKit(m, st, JSZip, {});
   const buf = Buffer.from(await r.blob.arrayBuffer()); fs.writeFileSync(path.join(OUT, 'kit.zip'), buf);
-  console.log('zip bytes', buf.length, r.summary.plates.length, 'plates', r.summary.tiles);
+  console.log('zip bytes', buf.length, r.summary.plates.length, 'plates', r.summary.tiles, 'clamps', r.summary.clamps);
+  const kz = await JSZip.loadAsync(buf);
+  const cf = Object.keys(kz.files).filter(f => /frame\/clamps.*\.stl$/.test(f));
+  if (m.clamps.length && !cf.length) { console.log('no clamp files'); process.exit(1); }
+  for (const f of cf) { const e = stlOpenEdges(await kz.file(f).async('nodebuffer')); console.log(f, 'open edges', e); if (e) process.exit(1); }
+  const rd = await kz.file('README.txt').async('string'); if (m.clamps.length && !rd.includes('חבק')) { console.log('README misses clamps'); process.exit(1); }
   const b = await WallKit.buildFitTest(st, JSZip);
   const fz = await JSZip.loadAsync(Buffer.from(await b.arrayBuffer()));
   const stl = await fz.file('fit-test.stl').async('nodebuffer');

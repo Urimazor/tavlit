@@ -20,7 +20,8 @@ function normalize(s) {
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
   s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
   if (s.piece.cutOn === undefined) s.piece.cutOn = s.piece.cutTilt > 0;   // designs saved before the switch keep their look
-  s.frame = Object.assign({ joint: 9, jointClr: 0.2, knobW: 5 }, s.frame);
+  s.frame = Object.assign({ jointClr: 0.2, clampEvery: 40, clampLen: 6, clampClr: 0.1 }, s.frame);
+  delete s.frame.joint; delete s.frame.knobW;   // dovetails gave way to separate clamps (2026-11-06)
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
   if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; s.fitCal = 1; }
   // Uri's printed frame (2026-11-02): tiles at 0.05 mm were too tight to join; dovetails default to 0.1 mm.
@@ -202,7 +203,7 @@ function renderPanel() {
   // 5 frame & fit
   const fr = s.frame;
   panel.append(section('frame', 6, 'מסגרת והתאמה', `עובי ${fr.t} · מרווח ${fr.clr} מ"מ`, [
-    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל למרווח הנעיצה היא 0.07 מ"מ ולמרווח במחבר בין אריחים 0.2 מ"מ, לפי בדיקות ההדפסה על ה-MK4.'),
+    el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל למרווח הנעיצה היא 0.07 מ"מ ולמרווח בחבקים שבין האריחים 0.1 מ"מ, לפי בדיקות ההדפסה על ה-MK4.'),
     slider('עובי המסגרת', '', 'frame.t', 2, 6, 0.2, 'מ"מ'),
     slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 6, 0.1, 'מ"מ'),
     slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.07', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
@@ -212,10 +213,11 @@ function renderPanel() {
       ? 'החלקים שבשולי הפאנל נמשכים עד הקצה ויורדים עד הקיר, כך שהם מכסים את הפס ההיקפי של המסגרת ונראה כאילו הם יוצאים מתוך הקיר. הפאה החיצונית המשופעת של כל חלק כזה ממשיכה באותו מישור כלפי הקיר, ונחתכת בקו היקפי אחיד אחד: הקו שבו מסתיים השיפוע הקצר ביותר. משם החלק יורד ישר לקיר, כך שקצה הפאנל נשאר קו רציף ונקי. מתחת לחלק יש מדף שטוח שנח על הפס. הפס עצמו צר כמו צלע בין תאים.'
       : 'המסגרת ההיקפית בולטת סביב הפאנל, ורוחבה נקבע ב"שוליים" בחלק "גודל וצורה". אפשר להסתיר אותה בתוך החלקים שבשוליים.'),
     el('div', { class: 'field-label' }, 'חיבור בין אריחים'),
-    el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. בכל חיבור יש מחברי זנב יונה שננעלים כמו פאזל, ודבק רק מקבע אותם.'),
-    slider('רוחב צלע בחיבור', 'מקום למחבר', 'frame.joint', 6, 14, 0.5, 'מ"מ'),
-    slider('רוחב צוואר המחבר', '', 'frame.knobW', 3, 8, 0.5, 'מ"מ'),
-    slider('מרווח במחבר', 'לכל צד · ברירת מחדל 0.2', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
+    el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. אריחים שכנים מוחזקים יחד בחבקים: חלקים קטנים בצורת ח שמודפסים בנפרד. בכל חבק יש בצלע מגרעת מלמעלה, שבה יושב גג החבק, ומגרעת בכל צד, שבה יורדות הרגליים ולוחצות את שני האריחים זה אל זה. החלקים שליד החבק מקבלים מגרעת קטנה בצוואר, כך שהחבק נסתר מתחתם. אין צורך לדחוס חלקים זה לתוך זה, והאריחים לא מתעקמים.'),
+    slider('מרחק בין חבקים', 'קטן יותר = יותר חבקים בכל חיבור', 'frame.clampEvery', 15, 120, 5, 'מ"מ'),
+    slider('אורך חבק', 'לאורך החיבור', 'frame.clampLen', 4, 12, 0.5, 'מ"מ'),
+    slider('מרווח בחבק', 'לכל צד · ברירת מחדל 0.1 · גדול יותר = רופף יותר', 'frame.clampClr', 0, 0.4, 0.01, 'מ"מ'),
+    slider('רווח בין אריחים', 'ברירת מחדל 0.2', 'frame.jointClr', 0, 0.4, 0.01, 'מ"מ'),
     el('div', { class: 'field-label' }, 'תלייה על הקיר'),
     el('p', { class: 'hint' }, 'חורי התלייה לא מחושבים בזמן העבודה, כדי שהכול יגיב מהר. בלחיצה על "הורד ערכת הדפסה" תישאל אם להוסיף אותם, ואז הם מתווספים לחלקים ולמפת ההרכבה. ליד כל פינה יש מאחור חור מנעול בצורת L: ראש הבורג נכנס בעיגול, והפאנל מחליק עד שהבורג נתפס בקצה הזרוע. הזרוע האנכית לתלייה לאורך והזרוע שפונה לצד לתלייה לרוחב, ותמיד משתמשים בשני הברגים העליונים. החלקים והחלוקה נראים בדיוק כמו בלי חורי תלייה: החור ממוקם רק מתחת לחלק שיש בתוכו מקום לחלל, גם אם הוא לא בפינה ממש.'),
     slider('קוטר ראש הבורג', '', 'frame.hang.head', 6, 12, 0.1, 'מ"מ'),
@@ -642,6 +644,13 @@ function update3D() {
   const frameMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(fr.color), roughness: 0.75, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true });
   const frameCap = capMaterial(fr.color);
   model.tiles.forEach(tl => { const me = new THREE.Mesh(geomFromMesh(E.tileMesh(tl, fr)), frameMat); me.castShadow = me.receiveShadow = true; addCap(me, frameCap); frameGroup.add(me); });
+  if (model.clamps && model.clamps.length) {
+    // the clamps between tiles, a shade darker than the frame so they can be told apart in a section
+    const cm = new E.Mesh(); model.clamps.forEach(k => cm.append(E.clampPlaced(k, model.clampSpec)));
+    const hsl = {}, cc = new THREE.Color(fr.color); cc.getHSL(hsl); cc.setHSL(hsl.h, hsl.s, hsl.l * 0.72);
+    const me = new THREE.Mesh(geomFromMesh(cm), new THREE.MeshStandardMaterial({ color: cc, roughness: 0.7, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true }));
+    me.castShadow = me.receiveShadow = true; addCap(me, capMaterial('#' + cc.getHexString())); frameGroup.add(me);
+  }
   state.color.bands.forEach((hex, b) => {
     const merged = new E.Mesh();
     model.pieces.forEach(c => { if (c.band === b) merged.append(E.pieceMesh(c, fr)); });
@@ -772,7 +781,7 @@ function updateBar() {
   $('#kitBtn').disabled = false;
   if (model.warnings.length) model.warnings.forEach(w => msg.append(el('div', { class: w.kind === 'warn' ? 'warn' : '' }, w.text)));
   else msg.append('הכול מוכן להדפסה. כל קודקוד נבדק לזווית הדפסה בלי תמיכות ולמרחק מהשכנים.');
-  const stats = [[model.pieces.length, 'חלקים'], [state.color.bands.length, 'צבעים'], [model.tiles.length, 'אריחי מסגרת'], [plateCount(), 'פלטות'], [Math.round(model.maxZ) + ' מ"מ', 'עומק'], ['≈' + Math.round(weightGrams()) + ' ג׳', 'משקל']];
+  const stats = [[model.pieces.length, 'חלקים'], [state.color.bands.length, 'צבעים'], [model.tiles.length, 'אריחי מסגרת'], ...(model.clamps && model.clamps.length ? [[model.clamps.length, 'חבקים']] : []), [plateCount(), 'פלטות'], [Math.round(model.maxZ) + ' מ"מ', 'עומק'], ['≈' + Math.round(weightGrams()) + ' ג׳', 'משקל']];
   const st = $('#stats'); st.textContent = '';
   stats.forEach(([v, l]) => st.append(el('div', { class: 'stat' }, el('b', {}, String(v)), el('span', {}, l))));
 }
