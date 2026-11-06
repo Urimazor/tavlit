@@ -850,7 +850,14 @@ $('#kitBtn').addEventListener('click', async () => {
   btn.innerHTML = old; btn.disabled = false;
 });
 $('#fitBtn').addEventListener('click', async () => {
-  try { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
+  // a stretch of this design's own frame (its seam, clamps and cells) when the panel has more than one tile;
+  // the small square strip otherwise
+  try {
+    clearTimeout(timer); rebuild();
+    const r = model && (model.clamps || []).length ? await K.buildShapeFitTest(model, clone(state), window.JSZip) : null;
+    if (r) { await offerFile('fit-test-design.zip', r.blob); toast(`בדיקת התאמה מתוך העיצוב: התפר בין אריחים ${r.section.tiles.join(' ו-')}, ${r.section.clamps} חבקים ו-${r.section.pieces} חלקים.`, 6000); }
+    else { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
+  }
   catch (e) { toast('יצירת בדיקת ההתאמה נכשלה: ' + e.message, 6000); }
 });
 $('#saveBtn').addEventListener('click', () => offerFile('tavlit-design.json', new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })));
