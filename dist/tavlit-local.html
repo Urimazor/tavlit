@@ -2667,14 +2667,34 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
   function cutTile(tl, clip) {
     const PC = root.polygonClipping, ar = poly => Math.abs(E.area(poly[0].slice(0, -1)));
     const keepBig = g => { const a = g.map(ar), big = Math.max(0, ...a); return g.filter((poly, i) => a[i] > Math.max(1, big * 0.05)); };
-    const geom = keepBig(PC.intersection(tl.geom, clip));
+    // polygon-clipping now and then fails on nearly touching edges: retry on coordinates snapped to 1 micron
+    const snap = g => g.map(poly => poly.map(r => r.map(q => [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000])));
+    const isect = (a, b) => { try { return PC.intersection(a, b); } catch (e) { return PC.intersection(snap(a), snap(b)); } };
+    const geom = keepBig(isect(tl.geom, clip));
     if (!geom.length) return null;
-    const slabs = tl.slabs ? tl.slabs.map(sl => ({ z0: sl.z0, z1: sl.z1, g: PC.intersection(sl.g, geom).filter(poly => ar(poly) > 0.05) })).filter(sl => sl.g.length) : null;
+    const slabs = tl.slabs ? tl.slabs.map(sl => { let g; try { g = isect(sl.g, geom); } catch (e) { g = isect(sl.g, clip); } return { z0: sl.z0, z1: sl.z1, g: g.filter(poly => ar(poly) > 0.05) }; }).filter(sl => sl.g.length) : null;
     return { geom, slabs };
   }
 
   async function buildShapeFitTest(model, st, JSZip) {
     const fr = st.frame, pr = st.print, half = fr.rib / 2, PC = root.polygonClipping;
+    // a panel printed as one tile has no seam: build it again for a smaller bed so it splits, and take the seam
+    // from there (same cells, same clamps the panel would get if it were split)
+    let sb = st, virt = false;
+    if (!(model.clamps || []).length) {
+      // two strips first (one long seam), then smaller squares; keep the split whose best stretch holds most clamps
+      const W = model.bounds.w, H = model.bounds.h, mg = 2 * pr.margin + 4;
+      let bestK = 0;
+      for (const [fw, fh] of [[0.6, 1], [1, 0.6], [0.5, 1], [1, 0.5], [0.6, 0.6], [0.45, 0.45]]) {
+        const s1 = JSON.parse(JSON.stringify(st));
+        s1.print.bedW = Math.max(70, Math.round(W * fw)) + mg; s1.print.bedH = Math.max(70, Math.round(H * fh)) + mg; if (s1.frame.hang) s1.frame.hang.on = false;
+        try {
+          const m1 = E.build(s1, true), sc = m1.clamps.length && pickSection(m1, st), k = sc ? sc.clamps.length * 100 + sc.cells.length : 0;
+          if (k > bestK) { bestK = k; model = m1; sb = s1; virt = true; }
+          if (sc && sc.clamps.length >= 3) break;
+        } catch (e) { /* try the next split */ }
+      }
+    }
     const sec = pickSection(model, st);
     if (!sec) return null;
     const ring = p => { const r = p.slice(); r.push(r[0]); return r; };
@@ -2708,7 +2728,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     for (const v of want) {
       if (Math.abs(v - base) < 1e-9) { variants.set(v, model); continue; }
       try {
-        const s2 = JSON.parse(JSON.stringify(st)); s2.frame.clr = v; if (s2.frame.hang) s2.frame.hang.on = false;
+        const s2 = JSON.parse(JSON.stringify(sb)); s2.frame.clr = v; if (s2.frame.hang) s2.frame.hang.on = false;
         const m2 = E.build(s2, true);
         if (sec.clamps.every(k => m2.clamps.some(q => same(q.m, k.m)))) variants.set(v, m2);
       } catch (e) { /* that clearance is left out */ }
@@ -2752,14 +2772,14 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     zip.file('README.txt', [
       `בדיקת התאמה מתוך העיצוב: ${st.name || 'פאנל'}`, '',
       `זה קטע אמיתי מהמסגרת שלך: התפר בין אריח ${tA.label} לאריח ${tB.label}, עם ${sec.clamps.length} מקומות לחבקים ו-${pcs.length} תאים משני הצדדים, בדיוק בצורה שלהם (בוורונוי התפר מזוגזג לפי גבולות התאים).`,
-      'fit-map.svg מראה איפה הקטע נמצא בפאנל.', '',
+      'fit-map.svg מראה איפה הקטע נמצא בפאנל.', ...(virt ? ['הפאנל שלך מודפס כאריח מסגרת אחד, כך שבפאנל עצמו אין חבקים. התפר כאן הוא התפר שהיה נוצר אילו הפאנל היה מחולק לאריחים, והוא בודק את החלקים בצורתם האמיתית ואת החבקים לפאנלים גדולים יותר.'] : []), '',
       'הדפסה: הכול בלי תמיכות. החבקים עומדים על הצד בצורת ח; אם קשה להם להיצמד, הוסף שוליים (brim).',
       'הרכבה: הנח את שני חלקי המסגרת צמודים לאורך התפר המזוגזג ולחץ חבק לכל מגרעת בתפר, מלמעלה, עד שהגג שלו בגובה המסגרת.',
       `החבקים בלי חריצים מודפסים לפי ההגדרה הנוכחית (${S.cc.toFixed(2)} מ"מ), אחד לכל מקום. החבקים עם החריצים בודקים מרווחים אחרים: בחר את הראשון שנכנס בלחיצת אצבע ומחזיק את שני החלקים צמודים, והזן את המרווח שלו תחת "מרווח בחבק".`,
       'אחר כך נעץ כל חלק בתא שלו (המספר שקוע בתחתית החלק ותואם את המפה). כל חלק מודפס במרווח אחר; בחר את הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו תחת "מרווח התאמה".',
       'החלקים שליד חבק בודקים גם את המגרעת לרגל החבק: הם צריכים להיכנס כשהחבק כבר במקום.', '',
       ...lines, '', ...clLines].join('\r\n'));
-    return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), section: { tiles: [tA.label, tB.label], clamps: sec.clamps.length, pieces: pcs.length, plates: plates.length, clearances: vals }, placed };
+    return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), section: { tiles: [tA.label, tB.label], clamps: sec.clamps.length, pieces: pcs.length, plates: plates.length, clearances: vals, virtual: virt }, placed };
   }
 
   // the whole panel with the test stretch picked out
@@ -3735,7 +3755,8 @@ $('#fitBtn').addEventListener('click', async () => {
   // the small square strip otherwise
   try {
     clearTimeout(timer); rebuild();
-    const r = model && (model.clamps || []).length ? await K.buildShapeFitTest(model, clone(state), window.JSZip) : null;
+    let r = null;
+    try { r = model ? await K.buildShapeFitTest(model, clone(state), window.JSZip) : null; } catch (e) { console.error(e); }
     if (r) { await offerFile('fit-test-design.zip', r.blob); toast(`בדיקת התאמה מתוך העיצוב: התפר בין אריחים ${r.section.tiles.join(' ו-')}, ${r.section.clamps} חבקים ו-${r.section.pieces} חלקים.`, 6000); }
     else { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
   }

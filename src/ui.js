@@ -854,7 +854,8 @@ $('#fitBtn').addEventListener('click', async () => {
   // the small square strip otherwise
   try {
     clearTimeout(timer); rebuild();
-    const r = model && (model.clamps || []).length ? await K.buildShapeFitTest(model, clone(state), window.JSZip) : null;
+    let r = null;
+    try { r = model ? await K.buildShapeFitTest(model, clone(state), window.JSZip) : null; } catch (e) { console.error(e); }
     if (r) { await offerFile('fit-test-design.zip', r.blob); toast(`בדיקת התאמה מתוך העיצוב: התפר בין אריחים ${r.section.tiles.join(' ו-')}, ${r.section.clamps} חבקים ו-${r.section.pieces} חלקים.`, 6000); }
     else { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
   }
