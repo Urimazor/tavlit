@@ -274,7 +274,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
 
   <footer class="bar">
     <button id="kitBtn" class="primary"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-5-5m5 5l5-5M4 19h16"/></svg>הורד ערכת הדפסה</button>
-    <button id="fitBtn" class="btn">בדיקת התאמה</button>
+    <button id="fitBtn" class="btn" title="קטע אמיתי מהעיצוב: תפר בין שני אריחים עם כמה חבקים והחלקים שלידו, כל חלק במרווח אחר">בדיקת התאמה</button>
     <div class="msg" id="msg" aria-live="polite"></div>
     <div class="stats" id="stats"></div>
   </footer>
@@ -2615,7 +2615,163 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   }
 
-  root.WallKit = { buildKit, buildFitTest, assemblySVG, plateSVG, hull };
+  // ---------- fit test cut out of the design itself ----------
+  // A piece of the real frame: the stretch of one tile seam that holds a few clamps (2-3), with every cell that
+  // touches it on both sides. The two halves keep the real seam (a zigzag on Voronoi, a straight line on a grid),
+  // the real openings, the clamp recesses and leg slots; the pieces are the real cells' collars (with their notch
+  // for the clamp's leg), cut short and each made with a different press-fit clearance.
+  // Returns null when the design has no seam with a clamp (a single tile).
+  function pickSection(model, st) {
+    const pr = st.print, uw = pr.bedW - 2 * pr.margin, uh = pr.bedH - 2 * pr.margin, half = st.frame.rib / 2;
+    const cl = model.clamps || [];
+    if (!cl.length) return null;
+    const byPair = new Map();
+    cl.forEach(k => { const key = k.tiles.slice().sort((a, b) => a - b).join('|'); if (!byPair.has(key)) byPair.set(key, []); byPair.get(key).push(k); });
+    const fits = (w, h) => (w <= uw && h <= uh) || (h <= uw && w <= uh);
+    let best = null;
+    for (const [key, list] of byPair) {
+      const [A, B] = key.split('|').map(Number);
+      // order the clamps along the seam: project on the line through the two that lie furthest apart
+      let ax = [1, 0];
+      if (list.length > 1) {
+        let d0 = -1;
+        for (const p of list) for (const q of list) { const d = Math.hypot(q.m[0] - p.m[0], q.m[1] - p.m[1]); if (d > d0) { d0 = d; ax = [(q.m[0] - p.m[0]) / d, (q.m[1] - p.m[1]) / d]; } }
+      } else ax = list[0].u;
+      const pj = q => q[0] * ax[0] + q[1] * ax[1];
+      const ord = list.slice().sort((p, q) => pj(p.m) - pj(q.m));
+      for (let k = Math.min(3, ord.length); k >= 1; k--) {
+        for (let i = 0; i + k <= ord.length; i++) {
+          const win = ord.slice(i, i + k), t0 = pj(win[0].m) - 2, t1 = pj(win[k - 1].m) + 2;
+          // every cell of the two tiles with a seam edge (to the other tile) in this stretch
+          const cells = model.cells.filter(c => (c.tile === A || c.tile === B) && c.poly && c.seam && c.seam.some((o, j) => {
+            if (!o || o.tile === c.tile || (o.tile !== A && o.tile !== B)) return false;
+            const a = c.poly[j], b = c.poly[(j + 1) % c.poly.length], ta = pj(a), tb = pj(b);
+            return Math.max(ta, tb) >= t0 && Math.min(ta, tb) <= t1;
+          }));
+          if (!cells.some(c => c.tile === A) || !cells.some(c => c.tile === B) || cells.some(c => c.mount)) continue;
+          const side = id => { const pts = []; cells.filter(c => c.tile === id).forEach(c => (E.inset(c.tpoly, -half, true) || c.tpoly).forEach(q => pts.push(q))); return E.bbox(pts); };
+          const bA = side(A), bB = side(B);
+          if (!fits(bA.w + 1, bA.h + 1) || !fits(bB.w + 1, bB.h + 1)) continue;
+          const area = bA.w * bA.h + bB.w * bB.h;
+          // most clamps first, then the most compact stretch
+          const score = k * 1e9 - area;
+          if (!best || score > best.score) best = { score, A, B, clamps: win, cells };
+        }
+        if (best && best.clamps.length === k) break;
+      }
+    }
+    return best;
+  }
+
+  // the part of tile `tl` inside `clip` (a multipolygon), with its slabs; loose slivers dropped
+  function cutTile(tl, clip) {
+    const PC = root.polygonClipping, ar = poly => Math.abs(E.area(poly[0].slice(0, -1)));
+    const keepBig = g => { const a = g.map(ar), big = Math.max(0, ...a); return g.filter((poly, i) => a[i] > Math.max(1, big * 0.05)); };
+    const geom = keepBig(PC.intersection(tl.geom, clip));
+    if (!geom.length) return null;
+    const slabs = tl.slabs ? tl.slabs.map(sl => ({ z0: sl.z0, z1: sl.z1, g: PC.intersection(sl.g, geom).filter(poly => ar(poly) > 0.05) })).filter(sl => sl.g.length) : null;
+    return { geom, slabs };
+  }
+
+  async function buildShapeFitTest(model, st, JSZip) {
+    const fr = st.frame, pr = st.print, half = fr.rib / 2, PC = root.polygonClipping;
+    const sec = pickSection(model, st);
+    if (!sec) return null;
+    const ring = p => { const r = p.slice(); r.push(r[0]); return r; };
+    // the cells, plus a full rib all round them: a strip along every edge and a small disc on every corner (an
+    // offset outline would put long spikes on the sharp corners, which pull in stubs of the ribs beyond)
+    // each half only from its own cells (a strip round the other tile's cells would pull in a stub of this tile's
+    // seam rib past the end of the stretch)
+    const clipOf = id => { const r0 = half + 0.05, parts = [];
+    sec.cells.filter(c => c.tile === id).forEach(c => {
+      const P = c.tpoly; parts.push([ring(E.ccw(P))]);
+      P.forEach((a, i) => {
+        const b = P[(i + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) return;
+        const nx = -(b[1] - a[1]) / L * r0, ny = (b[0] - a[0]) / L * r0;
+        parts.push([ring(E.ccw([[a[0] - nx, a[1] - ny], [b[0] - nx, b[1] - ny], [b[0] + nx, b[1] + ny], [a[0] + nx, a[1] + ny]]))]);
+        parts.push([ring(Array.from({ length: 12 }, (_, k) => [a[0] + r0 * 1.04 * Math.cos(k * Math.PI / 6), a[1] + r0 * 1.04 * Math.sin(k * Math.PI / 6)]))]);
+      });
+    });
+    return PC.union(...parts); };
+    const tA = model.tiles.find(t => t.id === sec.A), tB = model.tiles.find(t => t.id === sec.B);
+    const fA = tA && cutTile(tA, clipOf(sec.A)), fB = tB && cutTile(tB, clipOf(sec.B));
+    if (!fA || !fB) return null;
+    // the pieces: each with its own clearance, made by building the design again with that clearance (the frame does
+    // not change with it; the clamps must land in the same places, or that clearance is left out)
+    const pcs = sec.cells.filter(c => c.kind === 'piece');
+    const base = fr.clr ?? 0.07;
+    const pool = Array.from(new Set([0.03, 0.05, 0.07, 0.10, 0.15, +base.toFixed(2)])).sort((a, b) => a - b);
+    // the clearances nearest the current one, as many as there are pieces (at most the whole pool)
+    const want = pool.slice().sort((a, b) => Math.abs(a - base) - Math.abs(b - base) || a - b).slice(0, Math.min(pcs.length, pool.length)).sort((a, b) => a - b);
+    const same = (p, q) => Math.abs(p[0] - q[0]) < 0.01 && Math.abs(p[1] - q[1]) < 0.01;
+    const variants = new Map();
+    for (const v of want) {
+      if (Math.abs(v - base) < 1e-9) { variants.set(v, model); continue; }
+      try {
+        const s2 = JSON.parse(JSON.stringify(st)); s2.frame.clr = v; if (s2.frame.hang) s2.frame.hang.on = false;
+        const m2 = E.build(s2, true);
+        if (sec.clamps.every(k => m2.clamps.some(q => same(q.m, k.m)))) variants.set(v, m2);
+      } catch (e) { /* that clearance is left out */ }
+    }
+    const vals = want.filter(v => variants.has(v));
+    // pieces in order along the seam, clearances handed out from tight to loose; extra pieces keep the current one
+    const ax = sec.clamps.length > 1 ? [sec.clamps[sec.clamps.length - 1].m[0] - sec.clamps[0].m[0], sec.clamps[sec.clamps.length - 1].m[1] - sec.clamps[0].m[1]] : sec.clamps[0].u;
+    pcs.sort((p, q) => (p.c[0] - q.c[0]) * ax[0] + (p.c[1] - q.c[1]) * ax[1]);
+    const items = [], lines = [], placed = [];
+    pcs.forEach((c, i) => {
+      const v = i < vals.length ? vals[i] : base, mv = variants.get(v) || model;
+      const pc0 = mv.pieces.find(q => q.tile === c.tile && same(q.c, c.c)) || c;
+      const chamfer = Math.max(0.6, half + v - fr.gap / 2);
+      const pc = { collar: pc0.collar, body: pc0.body, notch: pc0.notch, apex: E.centroid(pc0.body), z0: fr.t + chamfer, zApex: fr.t + chamfer + 6 + (i % 6) * 3, layers: [], num: c.num };
+      const raw = E.pieceMesh(pc, fr, { label: true }), m = E.localize(raw);
+      placed.push({ kind: 'piece', mesh: raw, band: c.band });
+      const bb = E.bbox(chunk(m.v));
+      items.push({ w: bb.w + 1, h: bb.h + 1, ref: { name: `fit-piece-${c.num}-${v.toFixed(2)}mm`, mesh: m } });
+      lines.push(`חלק ${c.num} (גובה ${pc.zApex.toFixed(0)} מ"מ${pc0.notch && pc0.notch.length ? ', עם מגרעת לרגל החבק' : ''}): מרווח ${v.toFixed(2)} מ"מ לכל צד${Math.abs(v - base) < 1e-9 ? ' (ההגדרה הנוכחית)' : ''}`);
+    });
+    [[fA, tA], [fB, tB]].forEach(([f, tl], i) => {
+      const raw = E.tileMesh(f, fr), m = E.localize(raw), bb = E.bbox(chunk(m.v));
+      placed.push({ kind: 'frame', mesh: raw, tile: i });
+      items.push({ w: bb.w + 1, h: bb.h + 1, ref: { name: `fit-frame-${tl.label}`, mesh: m, big: true } });
+    });
+    // clamps: one at the current clearance for every place in the stretch, and the five graded ones (roof grooves)
+    const S = model.clampSpec, clLines = [];
+    const addClamp = (cc, marks, name) => { const m = E.localize(E.clampMesh(S, cc, marks)), bb = E.bbox(chunk(m.v)); items.push({ w: bb.w + 1, h: bb.h + 1, ref: { name, mesh: m } }); };
+    sec.clamps.forEach((k, i) => { addClamp(S.cc, 0, `fit-clamp-current-${i + 1}`); placed.push({ kind: 'clamp', mesh: E.clampPlaced(k, S) }); });
+    [0, 0.05, 0.10, 0.15, 0.20].forEach((cc, i) => { addClamp(cc, i + 1, `fit-clamp-${cc.toFixed(2)}mm`); clLines.push(`חבק עם ${i + 1} חריצים בגג: מרווח ${cc.toFixed(2)} מ"מ לכל צד`); });
+    const plates = E.packPlates(items, Object.assign({}, pr, { spacing: Math.max(pr.spacing, 4) }));
+    const zip = new JSZip();
+    for (let p = 0; p < plates.length; p++) {
+      const o = [], merged = new E.Mesh();
+      plates[p].items.forEach(it => { const m = it.rot ? E.localize(it.ref.mesh, true) : it.ref.mesh; o.push({ name: it.ref.name, mesh: m, x: it.x, y: it.y }); merged.append(m, it.x, it.y, 0); });
+      const nm = 'fit-test' + (plates.length > 1 ? '-' + (p + 1) : '');
+      zip.file(nm + '.3mf', await zip3mf(JSZip, o, fr.color || '#85898c'));
+      zip.file(nm + '.stl', E.stlBinary(merged, nm));
+    }
+    zip.file('fit-map.svg', sectionSVG(model, st, sec));
+    zip.file('README.txt', [
+      `בדיקת התאמה מתוך העיצוב: ${st.name || 'פאנל'}`, '',
+      `זה קטע אמיתי מהמסגרת שלך: התפר בין אריח ${tA.label} לאריח ${tB.label}, עם ${sec.clamps.length} מקומות לחבקים ו-${pcs.length} תאים משני הצדדים, בדיוק בצורה שלהם (בוורונוי התפר מזוגזג לפי גבולות התאים).`,
+      'fit-map.svg מראה איפה הקטע נמצא בפאנל.', '',
+      'הדפסה: הכול בלי תמיכות. החבקים עומדים על הצד בצורת ח; אם קשה להם להיצמד, הוסף שוליים (brim).',
+      'הרכבה: הנח את שני חלקי המסגרת צמודים לאורך התפר המזוגזג ולחץ חבק לכל מגרעת בתפר, מלמעלה, עד שהגג שלו בגובה המסגרת.',
+      `החבקים בלי חריצים מודפסים לפי ההגדרה הנוכחית (${S.cc.toFixed(2)} מ"מ), אחד לכל מקום. החבקים עם החריצים בודקים מרווחים אחרים: בחר את הראשון שנכנס בלחיצת אצבע ומחזיק את שני החלקים צמודים, והזן את המרווח שלו תחת "מרווח בחבק".`,
+      'אחר כך נעץ כל חלק בתא שלו (המספר שקוע בתחתית החלק ותואם את המפה). כל חלק מודפס במרווח אחר; בחר את הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו תחת "מרווח התאמה".',
+      'החלקים שליד חבק בודקים גם את המגרעת לרגל החבק: הם צריכים להיכנס כשהחבק כבר במקום.', '',
+      ...lines, '', ...clLines].join('\r\n'));
+    return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), section: { tiles: [tA.label, tB.label], clamps: sec.clamps.length, pieces: pcs.length, plates: plates.length, clearances: vals }, placed };
+  }
+
+  // the whole panel with the test stretch picked out
+  function sectionSVG(model, st, sec) {
+    const svg = assemblySVG(model, st), fy = y => -y, sel = new Set(sec.cells);
+    const add = [];
+    sec.cells.forEach(c => add.push(`<path d="${polyPath(c.poly, fy)}" fill="#0a58ca" fill-opacity="0.18" stroke="#0a58ca" stroke-width="0.9"/>`));
+    sec.clamps.forEach(k => add.push(`<circle cx="${fmt(k.m[0])}" cy="${fmt(fy(k.m[1]))}" r="3" fill="none" stroke="#c0392b" stroke-width="0.8"/>`));
+    return svg.replace('</svg>', add.join('\n') + '\n</svg>');
+  }
+
+  root.WallKit = { buildKit, buildFitTest, buildShapeFitTest, pickSection, assemblySVG, plateSVG, hull };
 })(typeof window !== 'undefined' ? window : globalThis);
 
 </script>
@@ -3575,7 +3731,14 @@ $('#kitBtn').addEventListener('click', async () => {
   btn.innerHTML = old; btn.disabled = false;
 });
 $('#fitBtn').addEventListener('click', async () => {
-  try { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
+  // a stretch of this design's own frame (its seam, clamps and cells) when the panel has more than one tile;
+  // the small square strip otherwise
+  try {
+    clearTimeout(timer); rebuild();
+    const r = model && (model.clamps || []).length ? await K.buildShapeFitTest(model, clone(state), window.JSZip) : null;
+    if (r) { await offerFile('fit-test-design.zip', r.blob); toast(`בדיקת התאמה מתוך העיצוב: התפר בין אריחים ${r.section.tiles.join(' ו-')}, ${r.section.clamps} חבקים ו-${r.section.pieces} חלקים.`, 6000); }
+    else { const blob = await K.buildFitTest(state, window.JSZip); await offerFile('fit-test-mk4.zip', blob); }
+  }
   catch (e) { toast('יצירת בדיקת ההתאמה נכשלה: ' + e.message, 6000); }
 });
 $('#saveBtn').addEventListener('click', () => offerFile('tavlit-design.json', new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })));
