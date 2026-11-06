@@ -455,7 +455,6 @@
     }
     const minFrac = st.tess.minFrac ?? 0.35;
     const t = fr.t, half = fr.rib / 2, clr = fr.clr, gap = fr.gap;
-    const jointHalf = Math.max(half, (fr.joint ?? 9) / 2);
     const bevel = Math.max(0.6, half + clr - gap / 2);   // 45°: rise = the step from the opening to the visible body
     let maxExt = 0;
     // distance from a point to the inner edge of the outer frame
@@ -832,41 +831,37 @@
 
     // seams that pointed at a piece that was joined into another now point at the joined piece
     cells.forEach(c => { if (c.seam) c.seam = c.seam.map(o => (o && o.mergedInto) || o); });
-    // dovetail joints across seam edges
-    const knobs = [];
-    const jw1 = fr.knobW ?? 5, jw2 = jw1 + 2.4, jh = Math.max(1.6, jointHalf - 1.6), jc = fr.jointClr ?? 0.2;
-    const trap = (m, u, n, w1, w2, h, back) => [
-      [m[0] - u[0] * w1 / 2 - n[0] * back, m[1] - u[1] * w1 / 2 - n[1] * back],
-      [m[0] + u[0] * w1 / 2 - n[0] * back, m[1] + u[1] * w1 / 2 - n[1] * back],
-      [m[0] + u[0] * w1 / 2, m[1] + u[1] * w1 / 2],
-      [m[0] + u[0] * w2 / 2 + n[0] * h, m[1] + u[1] * w2 / 2 + n[1] * h],
-      [m[0] - u[0] * w2 / 2 + n[0] * h, m[1] - u[1] * w2 / 2 + n[1] * h],
-      [m[0] - u[0] * w1 / 2, m[1] - u[1] * w1 / 2]
-    ];
+    // Tile seams are held by clamps: small U-shaped parts printed on their own. At each clamp the seam's frame
+    // widens into a short core (both tiles' halves, cg from the seam), the core's top is lowered by the clamp's roof,
+    // and its two sides are open slots for the clamp's legs. The pieces beside it get a notch for the legs.
+    // The frame keeps the nominal size; all the play is taken off the clamp (fr.clampClr), so only the clamp
+    // changes when the printer needs more or less room.
+    const clamps = [];
+    const jc = fr.jointClr ?? 0.2, CS = clampSpec(fr);
+    const { Lc, cD } = CS, cMargin = 1.0;
     const cellIdx = new Map(cells.map((c, i) => [c, i]));
-    const knobMargin = 1.0; // solid frame kept around a socket (mm)
-    let skippedKnobs = 0;
     const openList = pieces.map(c => ({ c, ring: [q3(c.opening).concat([q3(c.opening)[0]])], bb: bbox(c.opening) }));
-    // the tab, its socket and the solid frame around them, on both sides of the seam
-    const knobZone = (m, u, nn) => ccw(trap(m, u, nn, jw1 + 2 * (jc + knobMargin), jw2 + 2 * (jc + knobMargin), jh + jc + knobMargin, 1.2 + knobMargin));
-    // The seam keeps the normal rib, so the tab reaches into the two cells beside it. There the frame widens
-    // locally: each of those cells' openings (and the piece's collar) gets a notch around the tab. Any other cell's
-    // opening must stay clear of it, and a hanging piece (its cell is solid frame with the keyhole) is never notched.
-    const knobFits = (m, u, nn, own, tgt) => {
-      const big = knobZone(m, u, nn);
+    // rectangle along the seam: |s| <= hu along u, n0..n1 across it
+    const rectAt = (m, u, n, hu, n0, n1) => ccw([[-hu, n0], [hu, n0], [hu, n1], [-hu, n1]].map(([s, d]) => [m[0] + u[0] * s + n[0] * d, m[1] + u[1] * s + n[1] * d]));
+    // the clamp and the solid frame round it must stay clear of every other cell's opening
+    const clampFits = (m, u, n, c, o) => {
+      const big = rectAt(m, u, n, Lc / 2 + cMargin, -(cD + cMargin), cD + cMargin);
       const bb = bbox(big), r = [big.concat([big[0]])];
       for (const op of openList) {
-        if ((op.c === own || op.c === tgt) && !op.c.mount) continue;
+        if (op.c === c || op.c === o) continue;
         if (op.bb.x0 > bb.x1 || op.bb.x1 < bb.x0 || op.bb.y0 > bb.y1 || op.bb.y1 < bb.y0) continue;
         let hit; try { hit = root.polygonClipping.intersection(r, op.ring); } catch (e) { return false; }
         if (hit.some(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.01)) return false;
       }
-      return true;
+      // nor run into another clamp
+      const reach = 2 * Math.hypot(Lc / 2 + cMargin, cD + cMargin);
+      return !clamps.some(k => Math.hypot(k.m[0] - m[0], k.m[1] - m[1]) < reach);
     };
-    // the notch a tab at m needs in cell X: a rectangle W wide, from the seam D deep into X; null when X needs
+    // the notch a clamp at m needs in cell X: a rectangle W wide, from the seam D deep into X; null when X needs
     // none (no opening there, or the rib already reaches), false when it does not fit. It must leave a printable
     // wall between itself and the rest of the collar, and not touch X's other notches
-    const notchFor = (X, m, u, D, W) => {
+    // (the frame fills it out to D; the piece's collar makes room out to Dc, for the clamp's leg)
+    const notchFor = (X, m, u, D, W, Dc) => {
       if (X.kind !== 'piece' || !X.opening || X.mount) return null;
       if (D <= half + 0.05) return null;
       const P = X.poly, n = P.length;
@@ -883,12 +878,12 @@
       if (k < 0) return false;
       const a = P[k], b = P[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]), uk = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], nIn = [-uk[1], uk[0]];
       const sm = (m[0] - a[0]) * uk[0] + (m[1] - a[1]) * uk[1];
-      const sp = { o: a, uk, nIn, s1: sm - W / 2, s2: sm + W / 2, D };
+      const sp = { o: a, uk, nIn, s1: sm - W / 2, s2: sm + W / 2, D, Dc: Dc ?? D };
       const list = (notchesOf.get(X) || []).concat([sp]);
       const test = notchCut(X, list, clr);
       if (!test || !simpleCCW(test.collarN) || area(test.collarN) < 12) return false;
       // a printable wall between the notch and every part of the collar it does not cut into
-      const run = notchRun(X.collar, sp, sp.s1 - clr, sp.s2 + clr, D + clr), C = X.collar, nc = C.length;
+      const run = notchRun(X.collar, sp, sp.s1 - clr, sp.s2 + clr, sp.Dc + clr), C = X.collar, nc = C.length;
       const cutE = new Set(); for (let i = run.ka; ; i = (i + 1) % nc) { cutE.add(i); if (i === run.kb) break; }
       const segs = [];
       for (let i = 0; i < nc; i++) if (!cutE.has(i)) segs.push([C[i], C[(i + 1) % nc]]);
@@ -900,76 +895,72 @@
       return sp;
     };
     const notchesOf = new Map();
-    // the tab's neck must sit in the owner's frame and its head in the neighbour's, or it ends up loose
-    const anchored = (m, u, nn, own, tgt) => {
-      const kp = ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), r = [kp.concat([kp[0]])];
-      const ar = (G) => G.reduce((sum, poly) => sum + Math.abs(area(poly[0].slice(0, -1))), 0);
-      try {
-        const inOwn = ar(root.polygonClipping.intersection(r, [q3(own.tpoly).concat([q3(own.tpoly)[0]])]));
-        const inTgt = ar(root.polygonClipping.intersection(r, [q3(tgt.tpoly).concat([q3(tgt.tpoly)[0]])]));
-        return inOwn > 0.7 * jw1 * 1.2 && inTgt > 0.7 * jh * (jw1 + jw2) / 2;
-      } catch (e) { return false; }
-    };
-    // seam edges, grouped by the pair of tiles they join. Tabs are spread thin: about half as many as one or
-    // two per edge, so a tile seam can be pushed together without a crowd of tight tabs each catching in turn
-    const seamEdges = new Map(), allSeam = new Map();
+    // seam edges, grouped by the pair of tiles they join
+    const allSeam = new Map();
     cells.forEach(c => c.kind !== 'merged' && c.seam.forEach((o, i) => {
       if (!o) return;
-      // each shared edge is seen from both cells, and the two cells' outlines differ by rounding,
-      // so handle it only from the lower-numbered cell (two tabs on one edge cut each other into slivers)
+      // each shared edge is seen from both cells: handle it only from the lower-numbered cell
       if (cellIdx.get(c) > cellIdx.get(o)) return;
       const a = c.poly[i], b = c.poly[(i + 1) % c.poly.length];
       const L = Math.hypot(b[0] - a[0], b[1] - a[1]);
-      const nOld = L >= 34 ? 2 : (L >= jw2 + 5 ? 1 : 0);
       const key = [c.tile, o.tile].sort().join('|');
       if (!allSeam.has(key)) allSeam.set(key, []);
-      allSeam.get(key).push({ c, o, a, b, L, nOld });
-      if (!nOld) return;
-      if (!seamEdges.has(key)) seamEdges.set(key, []);
-      seamEdges.get(key).push({ c, o, a, b, L, nOld });
+      allSeam.get(key).push({ c, o, a, b, L });
     }));
-    // try to put a tab on edge a-b, owned by own, at one of the places fs along the edge (0..1)
-    const tryPlace = (c, o, a, b, L, own, fs) => {
+    // try to put a clamp on edge a-b (c's edge, o across it) at one of the places fs along the edge (0..1)
+    const tryPlace = (c, o, a, b, L, fs) => {
+      if (c.mount || o.mount || !c.tpoly || !o.tpoly) return false;   // a hanging cell is solid frame round the keyhole
       const u = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], n = [u[1], -u[0]];
-      const tgt = own === c ? o : c, nn = own === c ? n : [-n[0], -n[1]];
       for (const f of fs) {
+        // the clamp must stay on this edge with room to spare at both ends
+        if (Math.min(f, 1 - f) * L < Lc / 2 + cMargin) continue;
         const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-        // the tab must stay on this edge with room to spare at both ends
-        if (Math.min(f, 1 - f) * L < jw2 / 2 + jc + knobMargin) continue;
-        if (!own.tpoly || !tgt.tpoly || !anchored(m, u, nn, own, tgt) || !knobFits(m, u, nn, own, tgt)) continue;
-        const nOwn = notchFor(own, m, u, 1.2 + knobMargin, jw1 + 2 * (jc + knobMargin)), nTgt = notchFor(tgt, m, u, jh + jc + knobMargin, jw2 + 2 * (jc + knobMargin));
-        if (nOwn === false || nTgt === false) continue;
-        for (const [X, nt] of [[own, nOwn], [tgt, nTgt]]) if (nt) { if (!notchesOf.has(X)) notchesOf.set(X, []); notchesOf.get(X).push(nt); }
-        knobs.push({ owner: own.tile, target: tgt.tile, poly: ccw(trap(m, u, nn, jw1, jw2, jh, 1.2)), socket: ccw(trap(m, u, nn, jw1 + 2 * jc, jw2 + 2 * jc, jh + jc, 0.6)) });
+        if (!clampFits(m, u, n, c, o)) continue;
+        const nC = notchFor(c, m, u, CS.cg, Lc, cD), nO = notchFor(o, m, u, CS.cg, Lc, cD);
+        if (nC === false || nO === false) continue;
+        for (const [X, nt] of [[c, nC], [o, nO]]) if (nt) { if (!notchesOf.has(X)) notchesOf.set(X, []); notchesOf.get(X).push(nt); }
+        clamps.push({ tiles: [c.tile, o.tile], m, u, n });
         return true;
       }
       return false;
     };
     const FS = [0, -0.04, 0.04, -0.08, 0.08, -0.12, 0.12, -0.16, 0.16, -0.22, 0.22, -0.3, 0.3].map(d => 0.5 + d);
-    for (const [key, list] of seamEdges) {
-      // order the edges along the seam, so the kept tabs are evenly spaced
+    const every = Math.max(10, fr.clampEvery ?? 40);
+    for (const [key, list] of allSeam) {
+      // order the edges along the seam, so the clamps are evenly spaced: one every `every` mm of seam
       const xs = list.map(e => e.a[0] + e.b[0]), ys = list.map(e => e.a[1] + e.b[1]);
       const alongX = Math.max(...xs) - Math.min(...xs) >= Math.max(...ys) - Math.min(...ys);
       list.sort((p, q) => alongX ? (p.a[0] + p.b[0]) - (q.a[0] + q.b[0]) : (p.a[1] + p.b[1]) - (q.a[1] + q.b[1]));
-      let acc = 0.5, placedHere = 0;   // half a share to start: the first edge of every seam gets a tab
-      for (const { c, o, a, b, L, nOld } of list) {
-        acc += nOld / 2;
-        if (acc < 1) continue;
-        // alternate who owns the tab so tiles lock in both directions; slide it along the edge until it and its
-        // socket keep solid frame all around them (near a cell corner a tab can run into a neighbour's opening)
-        // a tab that does not fit here moves on to the next edge (its share stays in acc)
-        if (tryPlace(c, o, a, b, L, placedHere % 2 ? o : c, FS)) { acc -= 1; placedHere++; }
+      let acc = 0.5;   // half a share to start, so the first clamp sits about half a spacing in
+      for (const { c, o, a, b, L } of list) {
+        acc += L / every;
+        // a long edge can take more than one clamp, each in its own share of the edge
+        const k = Math.min(Math.floor(acc), Math.floor(L / (Lc + 2 * cD + 4)));
+        if (k < 1) continue;
+        let put = 0;
+        for (let j = 0; j < k; j++) {
+          const f0 = (j + 0.5) / k, sp = 0.5 / k;
+          if (tryPlace(c, o, a, b, L, FS.map(f => f0 + (f - 0.5) * sp / 0.5 * (k > 1 ? 0.6 : 1)))) put++;
+        }
+        // a clamp that does not fit here moves on to the next edge (its share stays in acc)
+        acc -= put;
       }
     }
-    // a pair of tiles still without a tab: try every edge they share, either way round, all along the edge
+    // a pair of tiles still without a clamp: try every edge they share, all along the edge
     const FS2 = []; for (let f = 0.5, k = 0; k < 41; k++) { const d = (k % 2 ? 1 : -1) * Math.ceil(k / 2) * 0.02; if (Math.abs(d) <= 0.4) FS2.push(f + d); }
+    let skippedKnobs = 0;
     for (const [key, list] of allSeam) {
-      if (knobs.some(k => [k.owner, k.target].sort().join('|') === key)) continue;
+      if (clamps.some(k => k.tiles.slice().sort().join('|') === key)) continue;
       let ok = false;
-      for (const { c, o, a, b, L } of list.slice().sort((p, q) => q.L - p.L)) { if (tryPlace(c, o, a, b, L, c, FS2) || tryPlace(c, o, a, b, L, o, FS2)) { ok = true; break; } }
+      for (const { c, o, a, b, L } of list.slice().sort((p, q) => q.L - p.L)) { if (tryPlace(c, o, a, b, L, FS2)) { ok = true; break; } }
       if (!ok) skippedKnobs++;
     }
-
+    // the frame around each clamp: R (whole clamp, lowered to the core's top) and the two leg slots
+    clamps.forEach((k, i) => {
+      k.id = i + 1;
+      k.R = rectAt(k.m, k.u, k.n, Lc / 2 + 0.05, -cD, cD);   // a hair longer than the core: no edges lie on top of each other
+      k.slots = [rectAt(k.m, k.u, k.n, Lc / 2, CS.cg, cD + 0.5), rectAt(k.m, k.u, k.n, Lc / 2, -cD - 0.5, -CS.cg)];
+    });
     // put the notches into the pieces beside each tab
     for (const [X, list] of notchesOf) {
       const r = notchCut(X, list, clr);
@@ -988,6 +979,7 @@
       try { frameClip = PC.difference([ringOf(outer)], PC.difference(PC.union(...zones), [ringOf(frameOuter)])); }
       catch (e) { frameClip = [ringOf(frameOuter)]; }
     }
+    const myClamps = id => clamps.filter(k => k.tiles.includes(id));
     const tiles = []; let islandTiles = 0; const islandPolys = [];
     for (let id = 0; id < P.nx * P.ny; id++) {
       const mine = allT.filter(c => c.tile === id);
@@ -1004,10 +996,9 @@
         mine.forEach(c => { tb.x0 = Math.min(tb.x0, c.tbb.x0); tb.y0 = Math.min(tb.y0, c.tbb.y0); tb.x1 = Math.max(tb.x1, c.tbb.x1); tb.y1 = Math.max(tb.y1, c.tbb.y1); });
         const nbT = allT.filter(c => c.tile !== id && c.tbb.x0 <= tb.x1 + 1 && c.tbb.x1 >= tb.x0 - 1 && c.tbb.y0 <= tb.y1 + 1 && c.tbb.y1 >= tb.y0 - 1);
         if (nbT.length && jc > 0) g = PC.difference(g, PC.union(...nbT.map(c => [ringOf(inset(c.tpoly, -jc / 2, true) || c.tpoly)])));
-        const own = knobs.filter(k => k.owner === id);
-        if (own.length) g = PC.union(g, ...own.map(k => [ringOf(k.poly)]));
         g = PC.intersection(g, frameClip);
-        const cut = knobs.filter(k => k.target === id).map(k => [ringOf(k.socket)]).concat(holesG);
+        // through the frame: the openings and the slots for the legs of this tile's clamps
+        const cut = myClamps(id).flatMap(k => k.slots.map(r => [ringOf(r)])).concat(holesG);
         g = PC.difference(g, ...cut);
       } catch (e) { throw new Error('חישוב המסגרת נכשל: ' + e.message); }
       {
@@ -1037,6 +1028,21 @@
           ];
           g = FB;
         } catch (e) { warnings.push({ kind: 'warn', text: 'חישוב חור התלייה נכשל באריח אחד: ' + e.message }); slabs = null; }
+      }
+      // the clamps' roofs sit in a recess on top of the frame: the core between the legs is lower by the roof
+      const cl = myClamps(id);
+      if (cl.length) {
+        try {
+          const zr = CS.zr, Rg = PC.union(...cl.map(k => [ringOf(k.R)]));
+          const clean = G => G.filter(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.05);
+          const base = slabs || [{ z0: 0, z1: t, g }], out = [];
+          for (const sl of base) {
+            if (sl.z1 <= zr + 1e-9 || sl.z0 >= t - 1e-9) { out.push(sl); continue; }
+            if (sl.z0 < zr - 1e-9) out.push({ z0: sl.z0, z1: zr, g: sl.g });
+            out.push({ z0: Math.max(sl.z0, zr), z1: sl.z1, g: clean(PC.difference(sl.g, Rg)) });
+          }
+          slabs = out;
+        } catch (e) { warnings.push({ kind: 'warn', text: 'חישוב שקע החבק נכשל באריח אחד: ' + e.message }); }
       }
       const pts = []; g.forEach(poly => poly[0].forEach(q => pts.push(q)));
       const iy = Math.floor(id / P.nx), ix = id % P.nx;
@@ -1197,14 +1203,15 @@
       }
     }
     const shortened = pieces.filter(c => c.scale < 0.999).length;
-    if (islandTiles) warnings.push({ kind: 'warn', text: `ב-${islandTiles} אריחים נשארו שאריות מסגרת קטנות ומנותקות, והן הוסרו. כדאי להגדיל את "רוחב צלע בחיבור".` });
+    if (islandTiles) warnings.push({ kind: 'warn', text: `ב-${islandTiles} אריחים נשארו שאריות מסגרת קטנות ומנותקות, והן הוסרו. כדאי להגדיל את "רוחב צלע".` });
     {
-      // every pair of touching tiles needs at least one tab, or it is held by glue only
+      // every pair of tiles that share a real stretch of seam needs at least one clamp (two tiles that only touch
+      // at a corner, over a few mm, are held through their other neighbours)
       const pairs = new Map();
-      cells.forEach(c => c.seam.forEach(o => { if (o && o.tile !== c.tile) pairs.set([c.tile, o.tile].sort().join('|'), 0); }));
-      knobs.forEach(k => { const key = [k.owner, k.target].sort().join('|'); if (pairs.has(key)) pairs.set(key, pairs.get(key) + 1); });
+      for (const [key, list] of allSeam) if (list.reduce((sum, e) => sum + e.L, 0) >= Lc + 2 * cMargin + 2) pairs.set(key, 0);
+      clamps.forEach(k => { const key = k.tiles.slice().sort().join('|'); if (pairs.has(key)) pairs.set(key, pairs.get(key) + 1); });
       const bare = [...pairs.values()].filter(v => v === 0).length;
-      if (bare) warnings.push({ kind: 'warn', text: `${bare} חיבורים בין אריחים נשארו בלי מחבר זנב יונה, כי לא היה מקום בטוח לשים אותו. הגדל את "רוחב צלע בחיבור" או את גודל התא.` });
+      if (bare) warnings.push({ kind: 'warn', text: `${bare} חיבורים בין אריחים נשארו בלי חבק, כי לא היה מקום בטוח לשים אותו. אפשר לקצר את "אורך החבק" או להגדיל את גודל התא.` });
     }
     if (hideRim) {
       const openEdge = cells.filter(c => c.kind === 'blank' && onEdge(c)).length + rimCells.filter(r => Math.abs(area(r.tpoly)) > 4).length;
@@ -1239,7 +1246,7 @@
       return ra - rb || a.c[0] - b.c[0];
     });
     pieces.forEach((c, i) => c.num = i + 1);
-    const seams = { knobs: knobs.length };
+    const seams = { clamps: clamps.length };
 
     // piece height check vs printer
     const maxZ = Math.max(...pieces.map(c => c.zMax ?? c.zApex));
@@ -1249,7 +1256,7 @@
 
     return {
       outer, region, frameOuter, hideRim, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank'), seams,
-      tiles: usedTiles, tileGrid: P, islandPolys, knobs, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominal,
+      tiles: usedTiles, tileGrid: P, islandPolys, clamps, clampSpec: CS, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominal,
       bounds: ob
     };
   }
@@ -1291,7 +1298,7 @@
   function notchCut(X, specs, clr) {
     const n = X.collar.length, runsC = [], runsO = [];
     for (const sp of specs) {
-      const rc = notchRun(X.collar, sp, sp.s1 - clr, sp.s2 + clr, sp.D + clr), ro = notchRun(X.opening, sp, sp.s1, sp.s2, sp.D);
+      const rc = notchRun(X.collar, sp, sp.s1 - clr, sp.s2 + clr, (sp.Dc ?? sp.D) + clr), ro = notchRun(X.opening, sp, sp.s1, sp.s2, sp.D);
       if (!rc || !ro) return null;
       runsC.push(rc); runsO.push(ro);
     }
@@ -1898,6 +1905,50 @@
     }
     return m;
   }
+  // ---------- clamps between frame tiles ----------
+  // Sizes in the frame of a seam: n across the seam (0 on the seam), u along it, z up from the wall. The frame
+  // gets the nominal shape (core |n| <= cg, slots out to cD, core top at zr); the clamp is smaller by clampClr
+  // on every face that meets the frame, so the printing play is set on the clamp alone.
+  function clampSpec(fr) {
+    const t = fr.t, half = fr.rib / 2, jc = fr.jointClr ?? 0.2, cc = Math.max(0, fr.clampClr ?? 0.1);
+    const Lc = Math.max(3, fr.clampLen ?? 6);
+    const cg = Math.max(half + 0.4, 2.0), lt = 1.6, cD = cg + lt;   // core half-width, leg, outer face of the slot
+    const rT = Math.min(1.4, t * 0.45), zr = t - rT;              // roof thickness, top of the core under the roof
+    return { t, jc, cc, Lc, cg, lt, cD, rT, zr };
+  }
+  // the clamp's U-shaped section (x = n, y = z): its legs grip the core of both tiles, sized so the tiles are held
+  // at their nominal seam gap; it ends 0.2 mm off the wall and 0.1 mm under the top of the frame. marks: small
+  // grooves on the roof (fit test only), to tell the clearances apart
+  function clampProfile(S, cc, marks) {
+    cc = cc ?? S.cc;
+    const gi = S.cg - S.jc / 2 + cc, Do = S.cD - cc, zb = 0.2, zrc = S.zr + 0.05 + cc, zt = S.t - 0.1;
+    const top = [[Do, zt]];
+    for (let i = 0; i < (marks || 0); i++) {
+      const x = Do - 1.0 - i * 1.3;
+      top.push([x, zt], [x, zt - 0.4], [x - 0.6, zt - 0.4], [x - 0.6, zt]);
+    }
+    top.push([-Do, zt]);
+    return ccw([[-Do, zb], [-gi, zb], [-gi, zrc], [gi, zrc], [gi, zb], [Do, zb], ...top]);
+  }
+  // print-ready clamp: the U section flat on the bed, standing Lc - 2cc tall (no overhangs at all, and every
+  // layer holds the whole U, so the legs do not break off along a layer line)
+  function clampMesh(S, cc, marks) {
+    cc = cc ?? S.cc;
+    const p = clampProfile(S, cc, marks);
+    return extrudeGeom(new Mesh(), [[p.concat([p[0]])]], 0, S.Lc - 2 * cc);
+  }
+  // the same clamp in place on the panel (for the 3D view)
+  function clampPlaced(k, S) {
+    const m = clampMesh(S), h = S.Lc / 2 - S.cc, out = new Mesh();
+    for (let i = 0; i < m.v.length; i += 3) {
+      const x = m.v[i], y = m.v[i + 1], w = m.v[i + 2] - h;
+      out.v.push(k.m[0] + k.n[0] * x + k.u[0] * w, k.m[1] + k.n[1] * x + k.u[1] * w, y);
+    }
+    // (x, y, w) -> (n, z, u) turns the solid inside out when that map mirrors it: flip the triangles then
+    const flip = k.u[0] * k.n[1] - k.n[0] * k.u[1] < 0;
+    for (let i = 0; i < m.f.length; i += 3) out.f.push(m.f[i], flip ? m.f[i + 2] : m.f[i + 1], flip ? m.f[i + 1] : m.f[i + 2]);
+    return out;
+  }
   function tileMesh(tl, fr) {
     if (!tl.slabs) return extrudeGeom(new Mesh(), tl.geom, 0, fr.t);
     const m = new Mesh();
@@ -2005,6 +2056,7 @@
     rng, area, centroid, ccw, bbox, inside, clipConvex, simplify, inset, isConvexCCW,
     makeShape, tessellate, surfaceAt, fieldAt, modsAt, build, setApex, subdivide, convexHull,
     Mesh, pieceMesh, tileMesh, placeLabel, textGlyphs, prism, annulus, meshVolume, checkManifold,
-    packPlates, extrudeGeom, stlBinary, model3mf, CONTENT_TYPES, RELS, localize, esc, collarColumn, notchCut
+    packPlates, extrudeGeom, stlBinary, model3mf, CONTENT_TYPES, RELS, localize, esc, collarColumn, notchCut,
+    clampSpec, clampProfile, clampMesh, clampPlaced
   };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -1,4 +1,4 @@
-// Fit of the printed parts, in plan: frame tiles must not overlap each other (they meet with the dovetail play),
+// Fit of the printed parts, in plan: frame tiles must not overlap each other (they meet with the seam play),
 // and no frame material may sit inside a piece's collar column or closer to it than the press-fit clearance.
 // Run for every preset, with the outer frame showing and hidden.
 globalThis.d3 = require('d3-delaunay'); globalThis.polygonClipping = require('polygon-clipping'); globalThis.earcut = require('earcut');
@@ -29,6 +29,6 @@ for (const p of WallPresets.presets) for (const hide of [false, true]) {
   }
   const ok = tileOv < 0.01 && inCollar < 0.01 && nearCollar < 0.05;
   if (!ok) fails++;
-  console.log((ok ? 'ok   ' : 'FAIL ') + label, 'tiles', m.tiles.length, 'knobs', m.knobs.length, 'notched pieces', notched, '| tile overlap', tileOv.toFixed(3), 'frame in collars', inCollar.toFixed(3), 'within clearance', nearCollar.toFixed(3));
+  console.log((ok ? 'ok   ' : 'FAIL ') + label, 'tiles', m.tiles.length, 'clamps', m.clamps.length, 'notched pieces', notched, '| tile overlap', tileOv.toFixed(3), 'frame in collars', inCollar.toFixed(3), 'within clearance', nearCollar.toFixed(3));
 }
 console.log(fails ? fails + ' failed' : 'all ok'); process.exit(fails ? 1 : 0);

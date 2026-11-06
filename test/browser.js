@@ -41,7 +41,7 @@ const map = [
   }
   // kit download on the swirl preset
   await page.selectOption('#presetSel', 'swirl'); await page.waitForTimeout(600);
-  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#kitBtn')]);
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#kitBtn').then(() => page.click('dialog.ask .ask-btns button:nth-child(2)'))]);
   await dl.saveAs(OUT + 'ui-kit.zip'); console.log('kit downloaded', dl.suggestedFilename(), fs.statSync(OUT + 'ui-kit.zip').size);
   const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#fitBtn')]);
   console.log('fit downloaded', dl2.suggestedFilename());

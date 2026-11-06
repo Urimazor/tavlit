@@ -29,6 +29,6 @@ for (const s of variants) {
   let tneg=0; for (const tl of m.tiles){ const me=E.tileMesh(tl,s.frame); if (E.meshVolume(me)<=0) tneg++; }
   total++;
   if (bad||negvol||tneg) { fails++; console.log('MESH', s.shape.type, s.tess.type, s.surface.type, {bad,negvol,tneg}); }
-  if (s.surface.type==='dome') console.log(s.shape.type.padEnd(8), s.tess.type.padEnd(9), 'pieces',m.pieces.length,'knobs',m.knobs.length,'mounts',m.mounts.length,'blanks',m.blanks.length,'tiles',m.tiles.length, m.tileGrid, 'short', m.pieces.filter(c=>c.scale<1).length, (Date.now()-t0)+'ms', m.warnings.filter(w=>w.kind==='warn').map(w=>w.text).join('|'));
+  if (s.surface.type==='dome') console.log(s.shape.type.padEnd(8), s.tess.type.padEnd(9), 'pieces',m.pieces.length,'clamps',m.clamps.length,'mounts',m.mounts.length,'blanks',m.blanks.length,'tiles',m.tiles.length, m.tileGrid, 'short', m.pieces.filter(c=>c.scale<1).length, (Date.now()-t0)+'ms', m.warnings.filter(w=>w.kind==='warn').map(w=>w.text).join('|'));
 }
 console.log('done', total, 'fails', fails);

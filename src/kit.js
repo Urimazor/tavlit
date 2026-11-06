@@ -31,7 +31,7 @@
       }
       out.push(`<text x="${fmt(c.c[0])}" y="${fmt(fy(c.c[1]) + fs * 0.35)}" font-size="${fmt(fs)}" text-anchor="middle" font-weight="700" fill="${textColor(col)}">${c.num}</text>`);
     });
-    // frame tile outlines (tiles follow whole cells and lock with dovetails)
+    // frame tile outlines (tiles follow whole cells and are held by clamps)
     if (model.tiles.length > 1) model.tiles.forEach(tl => {
       tl.geom.forEach(poly => out.push(`<path d="${polyPath(poly[0].slice(0, -1), fy)}" fill="none" stroke="#0a58ca" stroke-width="0.7" stroke-dasharray="3 1.6"/>`));
       const cx = (tl.bb.x0 + tl.bb.x1) / 2, cy = (tl.bb.y0 + tl.bb.y1) / 2;
@@ -130,6 +130,21 @@
       ff.file(`frame-${tl.label}.stl`, E.stlBinary(lm, 'frame ' + tl.label));
       summary.tiles.push(tl.label);
     }
+    // clamps between frame tiles: all on their own plate(s), standing on their U-shaped end, plus a few spares
+    const nCl = (model.clamps || []).length;
+    if (nCl) {
+      const S = model.clampSpec, spare = Math.max(2, Math.ceil(nCl * 0.1)), m = E.localize(clampPrint(S));
+      const bb = E.bbox(chunk(m.v));
+      const plates = E.packPlates(Array.from({ length: nCl + spare }, (_, i) => ({ w: bb.w + 1, h: bb.h + 1, ref: i })), Object.assign({}, pr, { spacing: Math.max(pr.spacing, 3) }));
+      for (let p = 0; p < plates.length; p++) {
+        const objs = [], merged = new E.Mesh();
+        plates[p].items.forEach(it => { objs.push({ name: `clamp ${it.ref + 1}`, mesh: m, x: it.x, y: it.y }); merged.append(m, it.x, it.y, 0); });
+        const nm = `clamps${plates.length > 1 ? '-' + (p + 1) : ''}`;
+        ff.file(nm + '.3mf', await zip3mf(JSZip, objs, fr.color || '#8a8d91'));
+        ff.file(nm + '.stl', E.stlBinary(merged, nm));
+      }
+      summary.clamps = { n: nCl, spare, plates: plates.length };
+    }
     // assembly maps
     const am = zip.folder('assembly-map');
     am.file('map-full-1to1.svg', assemblySVG(model, st));
@@ -146,6 +161,7 @@
     return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), summary };
   }
 
+  function clampPrint(S, cc, marks) { return E.clampMesh(S, cc, marks); }
   function chunk(v) { const o = []; for (let i = 0; i < v.length; i += 3) o.push([v[i], v[i + 1]]); return o; }
   function hull(pts) {
     const p = pts.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
@@ -167,7 +183,12 @@
     L.push('3. תיקיית pieces: תיקייה לכל צבע, ובה פלטות מוכנות. החלף גליל לפני כל צבע. הגדרות: 0.2 מ"מ, 2 דפנות, מילוי 10%-15%, בלי תמיכות.');
     L.push('   לכל פלטה יש קובץ plate-XX-map.svg שמראה איזה מספר נמצא איפה על המשטח. ' + (st.print.engrave !== false ? 'בנוסף, המספר של כל חלק שקוע בתחתית שלו (0.4 מ"מ, הפוך כמו בראי כשמסתכלים מלמעלה, וקריא כשהופכים את החלק). חלקים קטנים מאוד נשארים בלי מספר.' : 'מומלץ להוריד חלקים מהמשטח לפי המפה ולסמן מספר בעיפרון בתחתית.'));
     L.push('4. תיקיית assembly-map: מפת הרכבה בקנה מידה 1:1.' + (pages > 1 ? ` יש גם ${pages} דפי A4 להדפסה בגודל אמיתי (100%, בלי "התאם לעמוד"), להדבקה זה לצד זה.` : ''));
-    L.push('5. חבר את אריחי המסגרת (קווים כחולים מקווקווים במפה) בדבק מגע/CA על משטח שטוח, הנח את המפה מתחת ונעץ חלקים לפי המספרים.');
+    if (sm.clamps) {
+      L.push(`5. חבקים: בתיקיית frame יש ${sm.clamps.n} חבקים ועוד ${sm.clamps.spare} רזרביים (קבצי clamps). הם מודפסים כשהם עומדים על הצד בצורת ח, בלי תמיכות. אם קשה להם להיצמד למשטח, הוסף שוליים (brim).`);
+      L.push('   הנח את האריחים צמודים על משטח שטוח, פנים למטה (הגב כלפי מעלה) או פנים למעלה, ובכל מקום שבו יש בצלע מגרעת קטנה מלמעלה ושתי מגרעות בצדדים, לחץ חבק מלמעלה עד שהגג שלו יושב בגובה המסגרת. הרגליים לוחצות את שני האריחים זה אל זה.');
+      L.push('   אם החבק לא נכנס, הגדל את "מרווח בחבק"; אם הוא רופף, הקטן אותו (רק החבקים משתנים, אין צורך להדפיס את האריחים שוב). טיפת דבק CA בחבק מקבעת אותו לתמיד, אבל לא חובה.');
+      L.push('   אחר כך הנח את המפה מתחת ונעץ חלקים לפי המספרים. החלקים שליד חבק מקבלים מגרעת קטנה בצוואר שמתאימה לרגל החבק.');
+    } else L.push('5. הנח את המפה מתחת למסגרת ונעץ חלקים לפי המספרים.');
     if ((model.mounts || []).length) {
       L.push('6. תלייה: בארבע הפינות יש מאחור חור מנעול בצורת L (באדום במפה). ראש הבורג נכנס בעיגול, והפאנל מחליק למטה כך שהבורג נתפס בקצה הזרוע.');
       L.push('   כל פינה עליונה עובדת בשני הכיוונים: הזרוע האנכית לתלייה לאורך, והזרוע לכיוון הצד לתלייה לרוחב. תמיד משתמשים בשני הברגים העליונים.');
@@ -175,7 +196,7 @@
       L.push('   המסגרת נשארת בעובי רגיל והחלקים נראים בדיוק כמו בלי חורי תלייה. מתחת לחלק שמעל החור התא במסגרת מלא, ועליו טבעת נמוכה; בתחתית החלק יש חלל שנכנס על הטבעת וממשיך כמקום לראש הבורג. אריח עם חור תלייה בנוי מכמה שכבות גוף חופפות; PrusaSlicer מאחד אותן בפריסה.');
     }
     L.push('');
-    L.push('קבצים: ' + sm.plates.length + ' פלטות חלקים, ' + sm.tiles.length + ' אריחי מסגרת.');
+    L.push('קבצים: ' + sm.plates.length + ' פלטות חלקים, ' + sm.tiles.length + ' אריחי מסגרת' + (sm.clamps ? ', ' + sm.clamps.plates + ' פלטות חבקים' : '') + '.');
     L.push('design.json: ההגדרות של העיצוב. אפשר לטעון אותו בחזרה באפליקציה.');
     return L.join('\r\n');
   }
@@ -194,29 +215,35 @@
     }
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
-    const jh2 = Math.max(half, (fr.joint ?? 9) / 2), jc = fr.jointClr ?? 0.2;
-    // the seam between cell 3 and 4 carries a dovetail, exactly like the real frame: the normal rib, widened
-    // only around the tab, where the two pieces' collars get a notch; the two halves meet with the dovetail play
+    const S = E.clampSpec(fr), jc = S.jc;
+    // the seam between cell 3 and 4 is held by a clamp, exactly like the real frame: the normal rib, widened into a
+    // short core under the clamp, with slots for its legs; the two pieces beside it get a notch for the legs
     const xs = -W / 2 + rim + 3 * cs;
     const left = [[-W / 2, -H / 2], [xs - jc / 2, -H / 2], [xs - jc / 2, H / 2], [-W / 2, H / 2]], right = [[xs + jc / 2, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs + jc / 2, H / 2]];
-    const w1 = fr.knobW ?? 5, w2 = w1 + 2.4, jh = Math.max(1.6, jh2 - 1.6), km = 1.0;
     const parts = cells.map((c, i) => {
       const X = { poly: c, opening: E.inset(c, half), collar: E.inset(E.inset(c, half), clrs[i]), body: E.inset(c, fr.gap / 2) };
-      // cell 3 owns the tab (its right edge, index 1), cell 4 takes the socket (its left edge, index 3)
-      const nt = i === 2 ? { o: c[1], uk: [0, 1], nIn: [-1, 0], s1: cs / 2 - (w1 + 2 * (jc + km)) / 2, s2: cs / 2 + (w1 + 2 * (jc + km)) / 2, D: 1.2 + km }
-        : i === 3 ? { o: c[3], uk: [0, -1], nIn: [1, 0], s1: cs / 2 - (w2 + 2 * (jc + km)) / 2, s2: cs / 2 + (w2 + 2 * (jc + km)) / 2, D: jh + jc + km } : null;
-      if (!nt || nt.D <= half) return X;
+      // cell 3's right edge (index 1) and cell 4's left edge (index 3)
+      const nt = i === 2 ? { o: c[1], uk: [0, 1], nIn: [-1, 0] } : i === 3 ? { o: c[3], uk: [0, -1], nIn: [1, 0] } : null;
+      if (!nt) return X;
+      Object.assign(nt, { s1: cs / 2 - S.Lc / 2, s2: cs / 2 + S.Lc / 2, D: S.cg, Dc: S.cD });
       const r = E.notchCut(X, [nt], clrs[i]);
       return r ? Object.assign(X, { opening: r.opening, collar: r.collar, body: r.body, notch: r.notch }) : X;
     });
-    const openings = parts.map(X => X.opening);
-    const dt = (w1_, w2_, h_, back) => [[xs - back, -w1_ / 2], [xs - back, w1_ / 2], [xs, w1_ / 2], [xs + h_, w2_ / 2], [xs + h_, -w2_ / 2], [xs, -w1_ / 2]].reverse();
-    const holes = openings.map(o => [ring(o)]);
-    const gA = PCl.difference(PCl.union([ring(left)], [ring(E.ccw(dt(w1, w2, jh, 1.2)))]), ...holes);
-    const gB = PCl.difference([ring(right)], [ring(E.ccw(dt(w1 + 2 * jc, w2 + 2 * jc, jh + jc, 0.6)))], ...holes);
-    const mA = E.localize(E.extrudeGeom(new E.Mesh(), gA, 0, fr.t)), mB = E.localize(E.extrudeGeom(new E.Mesh(), gB, 0, fr.t));
+    const rectX = (x0, x1, hy) => [[x0, -hy], [x1, -hy], [x1, hy], [x0, hy]];
+    const holes = parts.map(X => [ring(X.opening)]);
+    const slots = [[ring(rectX(xs + S.cg, xs + S.cD + 0.5, S.Lc / 2))], [ring(rectX(xs - S.cD - 0.5, xs - S.cg, S.Lc / 2))]];
+    const R = [ring(rectX(xs - S.cD, xs + S.cD, S.Lc / 2 + 0.05))];
+    const half2 = q => { const g = PCl.difference([ring(q)], ...holes, ...slots); return { geom: g, slabs: [{ z0: 0, z1: S.zr, g }, { z0: S.zr, z1: fr.t, g: PCl.difference(g, R) }] }; };
+    const mA = E.localize(E.tileMesh(half2(left), fr)), mB = E.localize(E.tileMesh(half2(right), fr));
     const objs = [{ name: 'fit-frame-A', mesh: mA, x: 20, y: pr.bedH - H - 20 }, { name: 'fit-frame-B', mesh: mB, x: 20 + 3 * cs + rim + 15, y: pr.bedH - H - 20 }];
     const merged = new E.Mesh().append(mA, objs[0].x, objs[0].y, 0).append(mB, objs[1].x, objs[1].y, 0);
+    // five clamps, from tight to loose; the grooves on the roof count them (1 = tightest)
+    const cls = [0, 0.05, 0.10, 0.15, 0.20], clLines = [];
+    cls.forEach((cc, i) => {
+      const m = E.localize(E.clampMesh(S, cc, i + 1)), x = 20 + i * 14, y = pr.bedH - H - 45;
+      objs.push({ name: `fit-clamp-${cc.toFixed(2)}mm`, mesh: m, x, y }); merged.append(m, x, y, 0);
+      clLines.push(`חבק עם ${i + 1} חריצים בגג: מרווח ${cc.toFixed(2)} מ"מ לכל צד`);
+    });
     const lines = [];
     cells.forEach((c, i) => {
       const clr = clrs[i];
@@ -231,7 +258,7 @@
     const zip = new JSZip();
     zip.file('fit-test.3mf', await zip3mf(JSZip, objs, fr.color || '#85898c'));
     zip.file('fit-test.stl', E.stlBinary(merged, 'fit test'));
-    zip.file('README.txt', ['בדיקת התאמה ל-MK4', '', 'הדפס את הקובץ (פלטה אחת, בלי תמיכות), ונסה לנעוץ כל חלק בתא שלו.', 'בחר את החלק הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו באפליקציה תחת "מרווח התאמה".', 'המסגרת מודפסת בשני חלקים עם מחבר זנב יונה, כמו באריחים האמיתיים. אם המחבר רופף או צפוף, שנה את "מרווח במחבר".', '', ...lines].join('\r\n'));
+    zip.file('README.txt', ['בדיקת התאמה ל-MK4', '', 'הדפס את הקובץ (פלטה אחת, בלי תמיכות), ונסה לנעוץ כל חלק בתא שלו.', 'בחר את החלק הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו באפליקציה תחת "מרווח התאמה".', 'המסגרת מודפסת בשני חלקים, ויש איתה חמישה חבקים כמו אלה שמחזיקים את האריחים האמיתיים. הצמד את שני החלקים ולחץ חבק לתוך המגרעת שבחיבור, מלמעלה.', 'בחר את החבק הראשון שנכנס בלחיצת אצבע, יושב בגובה המסגרת ומחזיק את שני החלקים צמודים, והזן את המרווח שלו באפליקציה תחת "מרווח בחבק". את החבקים סופרים לפי החריצים הקטנים בגג.', '', ...lines, '', ...clLines].join('\r\n'));
     return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   }
 
