@@ -864,7 +864,16 @@ $('#fitBtn').addEventListener('click', async () => {
 $('#saveBtn').addEventListener('click', () => offerFile('tavlit-design.json', new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })));
 $('#loadFile').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { state = normalize(JSON.parse(await f.text())); selPoint = 0; selBand = 0; commit(); renderPanel(); schedule(); lastSize = null; toast('העיצוב נטען.'); }
+  try {
+    // a design file, or a print kit / fit test zip, which carries its design.json
+    let txt;
+    if (/\.zip$/i.test(f.name) || f.type.includes('zip')) {
+      const z = await window.JSZip.loadAsync(await f.arrayBuffer());
+      const d = z.file('design.json') || z.file(/(^|\/)design\.json$/)[0];
+      if (!d) throw new Error('no design.json');
+      txt = await d.async('string');
+    } else txt = await f.text();
+    state = normalize(JSON.parse(txt)); selPoint = 0; selBand = 0; commit(); renderPanel(); schedule(); lastSize = null; toast('העיצוב נטען.'); }
   catch (err) { toast('הקובץ לא נראה כמו עיצוב שנשמר מכאן.'); }
   e.target.value = '';
 });
