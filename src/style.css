@@ -163,3 +163,13 @@ dialog.ask::backdrop { background: rgba(0, 0, 0, .45); }
 dialog.ask h2 { margin: 0 0 8px; font-size: 18px; }
 dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(--muted); }
 .ask-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* pattern gallery (section 2) */
+.pats { display: grid; grid-template-columns: repeat(auto-fill, minmax(78px, 1fr)); gap: 6px; }
+.pat { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 4px 5px; border: 1px solid var(--line); background: var(--raised); border-radius: 10px; font-size: 11.5px; line-height: 1.2; text-align: center; width: 100%; }
+.pat svg { border-radius: 6px; display: block; }
+.pat small { font-size: 10px; color: var(--muted); }
+.pat[aria-pressed="true"] { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.pat-wrap { position: relative; }
+.pat-del { position: absolute; top: 2px; inset-inline-end: 2px; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--line); background: var(--panel); font-size: 13px; line-height: 1; padding: 0; }
+.pat-name { flex: 1; min-width: 0; }

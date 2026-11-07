@@ -212,42 +212,294 @@
   }
 
   // ---------- tessellations ----------
-  function tessellate(t, region, outer) {
-    const b = bbox(region), s = t.size, ob = bbox(outer || region);
-    const cells = [];
-    const pad = s * 2;
-    if (t.type === 'hex') {
-      const R = s / Math.sqrt(3);
-      const dy = 1.5 * R;
+  // A pattern is a lattice of cells (t.type), optionally turned (t.rot), resized smoothly across the panel
+  // (t.mod: larger toward the edge or the centre, a gradient, waves or ripples of size) and bent (t.warp: wavy
+  // lines). These changes move the lattice's corners through one smooth map, so a corner two cells share stays
+  // shared and the cells still cover the whole surface with even gaps.
+  // t.fill = 'motif' puts a shape (circle, half or quarter circles, a leaf, a diamond, a triangle) inside each
+  // cell instead. The cells become background (solid frame) and only the shapes are pieces, so the gaps between
+  // pieces vary while the pattern keeps its rule.
+  const D2R = Math.PI / 180;
+  // 1D remap of 0..1 where the local size follows S(s): keeps 0 -> 0 and 1 -> 1, carries on straight outside
+  function sizeMap(S) {
+    const N = 256, G = new Float64Array(N + 1);
+    for (let i = 1; i <= N; i++) G[i] = G[i - 1] + S((i - 0.5) / N) / N;
+    const tot = G[N], s0 = S(0) / tot, s1 = S(1) / tot;
+    return s => {
+      if (s <= 0) return s * s0;
+      if (s >= 1) return 1 + (s - 1) * s1;
+      const x = s * N, i = Math.floor(x), f = x - i;
+      return (G[i] + (G[i + 1] - G[i]) * f) / tot;
+    };
+  }
+  function sizeFn(md) {
+    const a = md.amount ?? 0.5, f = md.freq ?? 2;
+    if (md.type === 'radial' || md.type === 'linear') { const lq = a * Math.log(3); return s => Math.exp(lq * s); }
+    if (md.type === 'wave' || md.type === 'ripple') { const A = a * 0.7; return s => Math.exp(A * Math.sin(2 * Math.PI * f * s)); }
+    return null;
+  }
+  const corners4 = ob => [[ob.x0, ob.y0], [ob.x1, ob.y0], [ob.x1, ob.y1], [ob.x0, ob.y1]];
+  // the smooth map of the plane (null: none): size first, then the waves
+  function makeWarp(t, ob) {
+    const md = t.mod || {}, wp = t.warp || {}, steps = [];
+    const S = md.type && md.type !== 'none' && Math.abs(md.amount ?? 0.5) > 1e-6 && t.type !== 'radial' ? sizeFn(md) : null;
+    if (S) {
+      if (md.type === 'radial' || md.type === 'ripple') {
+        const cx = md.cx || 0, cy = md.cy || 0;
+        const R = Math.max(...corners4(ob).map(q => Math.hypot(q[0] - cx, q[1] - cy))) || 1, m = sizeMap(S);
+        steps.push(p => { const dx = p[0] - cx, dy = p[1] - cy, r = Math.hypot(dx, dy); if (r < 1e-9) return p; const k = R * m(r / R) / r; return [cx + dx * k, cy + dy * k]; });
+      } else {
+        const an = (md.angle || 0) * D2R, u = [Math.cos(an), Math.sin(an)], v = [-u[1], u[0]];
+        const ext = d => { const s = corners4(ob).map(q => q[0] * d[0] + q[1] * d[1]); return [Math.min(...s), Math.max(...s)]; };
+        const axes = [u].concat(md.both ? [v] : []).map(d => ({ d, e: ext(d), m: sizeMap(S) }));
+        steps.push(p => {
+          let q = p;
+          for (const A of axes) {
+            const s = q[0] * A.d[0] + q[1] * A.d[1], L = (A.e[1] - A.e[0]) || 1, ds = A.e[0] + L * A.m((s - A.e[0]) / L) - s;
+            q = [q[0] + A.d[0] * ds, q[1] + A.d[1] * ds];
+          }
+          return q;
+        });
+      }
+    }
+    if ((wp.amp || 0) > 1e-6 && t.type !== 'radial') {
+      const an = (wp.angle || 0) * D2R, u = [Math.cos(an), Math.sin(an)], v = [-u[1], u[0]], k = 2 * Math.PI / Math.max(10, wp.len || 200);
+      const amp = Math.min(wp.amp, 0.8 / k);   // steeper waves would fold the lattice over itself
+      steps.push(p => {
+        const su = p[0] * u[0] + p[1] * u[1], sv = p[0] * v[0] + p[1] * v[1];
+        const dv = amp * Math.sin(k * su), du = wp.both ? amp * Math.sin(k * sv + 1.3) : 0;
+        return [p[0] + v[0] * dv + u[0] * du, p[1] + v[1] * dv + u[1] * du];
+      });
+    }
+    if (!steps.length) return null;
+    const f = p => steps.reduce((q, g) => g(q), p);
+    f.inv = p => { let q = p.slice(); for (let i = 0; i < 90; i++) { const r = f(q); q = [q[0] + 0.5 * (p[0] - r[0]), q[1] + 0.5 * (p[1] - r[1])]; } return q; };
+    f.jac = p => { const h = 0.5, a = f([p[0] - h, p[1]]), b = f([p[0] + h, p[1]]), c = f([p[0], p[1] - h]), d = f([p[0], p[1] + h]); return Math.abs(((b[0] - a[0]) * (d[1] - c[1]) - (b[1] - a[1]) * (d[0] - c[0])) / (4 * h * h)); };
+    return f;
+  }
+  // lattices in their own coordinates, over the box b (x0..y1). quad: the cell's four corners (bottom-left,
+  // bottom-right, top-right, top-left) as indices into poly, for shapes placed in the cell; ij: grid index
+  const LATTICE = ['hex', 'square', 'triangle', 'brick', 'basket', 'rhombille', 'trihex', 'octsquare'];
+  function lattice(t, b) {
+    const s = t.size, pad = s * 2, out = [];
+    const add = (poly, quad, i, j, k) => out.push({ poly, quad, ij: [i, j, k || 0] });
+    const X0 = b.x0 - pad, X1 = b.x1 + pad, Y0 = b.y0 - pad, Y1 = b.y1 + pad;
+    if (t.type === 'hex' || t.type === 'rhombille') {
+      const R = t.type === 'hex' ? s / Math.sqrt(3) : s * 0.78, w = R * Math.sqrt(3), dy = 1.5 * R;
       let row = 0;
-      for (let y = b.y0 - pad; y <= b.y1 + pad; y += dy, row++) {
-        const off = (row % 2) ? s / 2 : 0;
-        for (let x = b.x0 - pad + off; x <= b.x1 + pad; x += s) {
+      for (let y = Y0; y <= Y1; y += dy, row++) {
+        const off = (row % 2) ? w / 2 : 0; let col = 0;
+        for (let x = X0 + off; x <= X1; x += w, col++) {
           const c = [];
           for (let k = 0; k < 6; k++) { const a = Math.PI / 6 + k * Math.PI / 3; c.push([x + R * Math.cos(a), y + R * Math.sin(a)]); }
-          cells.push(c);
+          if (t.type === 'hex') add(c, null, col, row);
+          else for (let k = 0; k < 3; k++) add([[x, y], c[2 * k], c[2 * k + 1], c[(2 * k + 2) % 6]], [0, 1, 2, 3], col, row, k);
         }
       }
-      return { cells, nominal: (3 * Math.sqrt(3) / 2) * R * R };
+      return out;
     }
     if (t.type === 'square') {
-      for (let y = b.y0 - pad; y <= b.y1 + pad; y += s)
-        for (let x = b.x0 - pad; x <= b.x1 + pad; x += s)
-          cells.push([[x, y], [x + s, y], [x + s, y + s], [x, y + s]]);
-      return { cells, nominal: s * s };
+      let row = 0;
+      for (let y = Y0; y <= Y1; y += s, row++) { let col = 0; for (let x = X0; x <= X1; x += s, col++) add([[x, y], [x + s, y], [x + s, y + s], [x, y + s]], [0, 1, 2, 3], col, row); }
+      return out;
     }
     if (t.type === 'triangle') {
       const a = s * 1.5, h = a * Math.sqrt(3) / 2;
       let row = 0;
-      for (let y = b.y0 - pad; y <= b.y1 + pad; y += h, row++) {
-        const off = (row % 2) ? a / 2 : 0;
-        for (let x = b.x0 - pad + off; x <= b.x1 + pad; x += a) {
-          cells.push([[x, y], [x + a, y], [x + a / 2, y + h]]);
-          cells.push([[x + a, y], [x + a * 1.5, y + h], [x + a / 2, y + h]]);
+      for (let y = Y0; y <= Y1; y += h, row++) {
+        const off = (row % 2) ? a / 2 : 0; let col = 0;
+        for (let x = X0 + off; x <= X1; x += a, col++) {
+          add([[x, y], [x + a, y], [x + a / 2, y + h]], null, col, row, 0);
+          add([[x + a, y], [x + a * 1.5, y + h], [x + a / 2, y + h]], null, col, row, 1);
         }
       }
-      return { cells, nominal: a * h / 2 };
+      return out;
     }
+    if (t.type === 'brick') {
+      // running bond: each brick carries the corner of the bricks above and below at the middle of its long sides
+      const h = s, w = s * Math.max(1, t.ratio || 2);
+      let row = 0;
+      for (let y = Y0; y <= Y1; y += h, row++) {
+        const off = (row % 2) ? w / 2 : 0; let col = 0;
+        for (let x = X0 - w + off; x <= X1; x += w, col++) add([[x, y], [x + w / 2, y], [x + w, y], [x + w, y + h], [x + w / 2, y + h], [x, y + h]], [0, 2, 3, 5], col, row);
+      }
+      return out;
+    }
+    if (t.type === 'basket') {
+      // basket weave: squares of two bricks, alternately side by side and stacked; every square's sides carry
+      // their middle point, so neighbouring bricks share all their corners
+      const S2 = 2 * s;
+      let row = 0;
+      for (let y = Y0; y <= Y1; y += S2, row++) {
+        let col = 0;
+        for (let x = X0; x <= X1; x += S2, col++) {
+          if ((row + col) % 2 === 0) {
+            add([[x, y], [x + s, y], [x + s, y + s], [x + s, y + S2], [x, y + S2], [x, y + s]], [0, 1, 3, 4], col, row, 0);
+            add([[x + s, y], [x + S2, y], [x + S2, y + s], [x + S2, y + S2], [x + s, y + S2], [x + s, y + s]], [0, 1, 3, 4], col, row, 1);
+          } else {
+            add([[x, y], [x + s, y], [x + S2, y], [x + S2, y + s], [x + s, y + s], [x, y + s]], [0, 2, 3, 5], col, row, 0);
+            add([[x, y + s], [x + s, y + s], [x + S2, y + s], [x + S2, y + S2], [x + s, y + S2], [x, y + S2]], [0, 2, 3, 5], col, row, 1);
+          }
+        }
+      }
+      return out;
+    }
+    if (t.type === 'trihex') {
+      // hexagons that touch at their corners, with triangles between them (trihexagonal tiling)
+      const a = s * 0.62, h = a * Math.sqrt(3);
+      let row = 0;
+      for (let y = Y0; y <= Y1; y += h, row++) {
+        const off = (row % 2) ? a : 0; let col = 0;
+        for (let x = X0 - 2 * a + off; x <= X1; x += 2 * a, col++) {
+          const c = []; for (let k = 0; k < 6; k++) c.push([x + a * Math.cos(k * Math.PI / 3), y + a * Math.sin(k * Math.PI / 3)]);
+          add(c, null, col, row, 0);
+          add([[x + a, y], [x + 1.5 * a, y + h / 2], [x + a / 2, y + h / 2]], null, col, row, 1);
+          add([[x - a / 2, y + h / 2], [x + a / 2, y + h / 2], [x, y + h]], null, col, row, 2);
+        }
+      }
+      return out;
+    }
+    if (t.type === 'octsquare') {
+      // octagons with small squares between them (truncated square tiling)
+      const p = s * 1.1, a = p / (1 + Math.SQRT2), q = p / 2, e = a / 2;
+      let row = 0;
+      for (let y = Y0; y <= Y1; y += p, row++) {
+        let col = 0;
+        for (let x = X0; x <= X1; x += p, col++) {
+          add([[x + e, y - q], [x + q, y - e], [x + q, y + e], [x + e, y + q], [x - e, y + q], [x - q, y + e], [x - q, y - e], [x - e, y - q]], null, col, row, 0);
+          add([[x + q, y + e], [x + p - e, y + q], [x + q, y + p - e], [x + e, y + q]], null, col, row, 1);
+        }
+      }
+      return out;
+    }
+    throw new Error('unknown tessellation ' + t.type);
+  }
+  // the unit-square shapes of a motif, variant k (u, v in 0..1, CCW). n: points per quarter turn of arc
+  function unitMotif(name, k, n) {
+    const arc = (cx, cy, r, a0, a1, m) => Array.from({ length: m + 1 }, (_, i) => { const a = (a0 + (a1 - a0) * i / m) * D2R; return [cx + r * Math.cos(a), cy + r * Math.sin(a)]; });
+    const C = [[0, 0], [1, 0], [1, 1], [0, 1]];
+    if (name === 'quarter') { const c = C[k % 4]; return [[c].concat(arc(c[0], c[1], 1, 90 * (k % 4), 90 * (k % 4) + 90, n))]; }
+    if (name === 'tri') { const i = k % 4; return [[C[i], C[(i + 1) % 4], C[(i + 3) % 4]]]; }
+    if (name === 'leaf') {
+      return k % 2 === 0 ? [arc(0, 1, 1, 270, 360, n).concat(arc(1, 0, 1, 90, 180, n).slice(1, -1))]
+        : [arc(0, 0, 1, 0, 90, n).concat(arc(1, 1, 1, 180, 270, n).slice(1, -1))];
+    }
+    if (name === 'half') {
+      const m = Math.max(3, Math.round(n * 0.7)) * 2;
+      switch (k % 4) {
+        case 0: return [arc(0.5, 0.5, 0.5, 90, 270, m), arc(0.5, 0.5, 0.5, -90, 90, m)];      // a circle split down the middle
+        case 1: return [arc(0.5, 0.5, 0.5, 180, 360, m), arc(0.5, 0.5, 0.5, 0, 180, m)];      // split across
+        case 2: return [arc(0, 0.5, 0.5, -90, 90, m), arc(1, 0.5, 0.5, 90, 270, m)];          // flat sides out, round sides meet
+        default: return [arc(0.5, 0, 0.5, 0, 180, m), arc(0.5, 1, 0.5, 180, 360, m)];
+      }
+    }
+    return null;
+  }
+  const QUAD_MOTIFS = ['quarter', 'half', 'leaf', 'tri'];
+  // which variant a cell takes, from the arrangement rule
+  function motifVariant(t, ij, nv) {
+    const i = ((ij[0] % 2) + 2) % 2, j = ((ij[1] % 2) + 2) % 2, o = Math.round(t.orient || 0), arr = t.arr || 'random';
+    const md = x => ((x % nv) + nv) % nv;
+    if (arr === 'same') return md(o);
+    if (arr === 'checker') return md(o + ((i + j) % 2) * (nv === 2 ? 1 : 2));
+    if (arr === 'rows') return md(o + j);
+    if (arr === 'cols') return md(o + i);
+    if (arr === 'block' || arr === 'blockOut' || arr === 'spin') {
+      if (nv === 2) return md(o + (i + j) % 2);
+      const q = [[2, 1], [3, 0]][i][j];                     // the corner of each cell that points at its 2x2 block's centre
+      return md(o + (arr === 'block' ? q : arr === 'blockOut' ? q + 2 : [[0, 3], [1, 2]][i][j]));
+    }
+    // random, but the same for the same cell and seed
+    let h = (Math.imul(ij[0], 73856093) ^ Math.imul(ij[1], 19349663) ^ Math.imul(ij[2] + 7, 83492791) ^ Math.imul(t.seed || 1, 2654435761)) >>> 0;
+    return Math.floor(rng(h)() * nv);
+  }
+  // size of the shape in a cell (0..1) from the "vary" setting, at point c of a panel with box ob
+  function motifScale(t, c, ob, R) {
+    const a = Math.max(0, Math.min(0.95, t.varyAmt ?? 0.5)), v = t.vary || 'none';
+    if (v === 'none' || a <= 0) return 1;
+    const W = ob.w / 2 || 1, H = ob.h / 2 || 1, r = Math.min(1, Math.hypot(c[0] / W, c[1] / H) / Math.SQRT2 * 1.15);
+    const an = (t.varyAngle || 0) * D2R, ex = Math.abs(Math.cos(an)) * W + Math.abs(Math.sin(an)) * H || 1;
+    const s = Math.max(0, Math.min(1, 0.5 + 0.5 * (c[0] * Math.cos(an) + c[1] * Math.sin(an)) / ex));
+    switch (v) {
+      case 'center': return 1 - a * r;
+      case 'edge': return 1 - a * (1 - r);
+      case 'linear': return 1 - a * s;
+      case 'wave': return 1 - a * (0.5 + 0.5 * Math.sin(2 * Math.PI * (t.varyFreq || 2) * s));
+      case 'ripple': return 1 - a * (0.5 + 0.5 * Math.cos(2 * Math.PI * (t.varyFreq || 2) * r));
+      case 'random': return 1 - a * R();
+    }
+    return 1;
+  }
+  function tessellate(t, region, outer) {
+    const b = bbox(region), s = t.size, ob = bbox(outer || region);
+    const f = makeWarp(t, ob);
+    let base;
+    if (LATTICE.includes(t.type)) {
+      const rot = (t.rot || 0) * D2R, cr = Math.cos(rot), sr = Math.sin(rot);
+      const toW = rot ? p => [p[0] * cr - p[1] * sr, p[0] * sr + p[1] * cr] : null;
+      let lb = b;
+      if (f || rot) {
+        // the box in the lattice's own coordinates that maps onto the region
+        const pts = densify(region, Math.max(4, s / 2)).map(p => { const q = f ? f.inv(p) : p; return rot ? [q[0] * cr + q[1] * sr, -q[0] * sr + q[1] * cr] : q; });
+        lb = bbox(pts);
+      }
+      const lat = lattice(t, lb);
+      if (toW || f) lat.forEach(c => { c.poly = c.poly.map(p => { let q = toW ? toW(p) : p; return f ? f(q) : q; }); });
+      const old = ['hex', 'square', 'triangle'].includes(t.type) && !f;
+      const R0 = s / Math.sqrt(3), a3 = s * 1.5;
+      const nominal = t.type === 'hex' ? (3 * Math.sqrt(3) / 2) * R0 * R0 : t.type === 'square' ? s * s : t.type === 'triangle' ? a3 * a3 * Math.sqrt(3) / 4 : s * s;
+      base = { cells: lat.map(c => c.poly), quads: lat.map(c => c.quad), ij: lat.map(c => c.ij), nominal };
+      // cells of different sizes (or sizes changed by the map): each counts against its own full size
+      if (!old) base.nominals = lat.map(c => Math.abs(area(c.poly)));
+    } else base = tessClassic(t, region, outer, f);
+    base.concave = !!f;
+    if (t.fill !== 'motif') return base;
+    // ---- shapes in the cells, the cells themselves become background ----
+    const name = t.motif || 'quarter', inner = Math.max(0.3, Math.min(1, t.inner ?? 0.9)), R = rng((t.seed || 1) * 7 + 3);
+    const cells = [], parent = [], nominals = [];
+    base.cells.forEach((cp, ci) => {
+      const poly = ccw(cp), c = centroid(poly), k = inner * motifScale(t, c, ob, R);
+      if (k < 0.08) return;
+      const quad = base.quads && base.quads[ci];
+      let shapes = null;
+      if (quad && QUAD_MOTIFS.includes(name)) {
+        const Q = quad.map(i => cp[i]);
+        if (area(Q) < 0) { Q.reverse(); }
+        const side = Math.sqrt(Math.abs(area(Q))) * k, n = Math.max(3, Math.min(10, Math.round(side * Math.PI / 2 / 3)));
+        const nv = name === 'leaf' ? 2 : 4, v = motifVariant(t, base.ij[ci], nv);
+        const map = ([u, w]) => { u = 0.5 + (u - 0.5) * k; w = 0.5 + (w - 0.5) * k; return [(1 - u) * (1 - w) * Q[0][0] + u * (1 - w) * Q[1][0] + u * w * Q[2][0] + (1 - u) * w * Q[3][0], (1 - u) * (1 - w) * Q[0][1] + u * (1 - w) * Q[1][1] + u * w * Q[2][1] + (1 - u) * w * Q[3][1]]; };
+        shapes = unitMotif(name, v, n).map(sh => sh.map(map));
+      } else if (name === 'shrink' || name === 'mid') {
+        let p = poly;
+        if (name === 'mid') { p = poly.map((a, i) => { const q = poly[(i + 1) % poly.length]; return [(a[0] + q[0]) / 2, (a[1] + q[1]) / 2]; }); }
+        const cc = centroid(p);
+        shapes = [p.map(q => [cc[0] + (q[0] - cc[0]) * k, cc[1] + (q[1] - cc[1]) * k])];
+      } else {
+        // circle: as large as fits round the cell's centre
+        let r = Infinity;
+        for (let i = 0; i < poly.length; i++) {
+          const a = poly[i], q = poly[(i + 1) % poly.length], ex = q[0] - a[0], ey = q[1] - a[1], L = Math.hypot(ex, ey);
+          if (L > 1e-9) r = Math.min(r, Math.abs((c[0] - a[0]) * ey - (c[1] - a[1]) * ex) / L);
+        }
+        r *= k;
+        const m = Math.max(10, Math.min(32, Math.round(2 * Math.PI * r / 3)));
+        shapes = [Array.from({ length: m }, (_, i) => [c[0] + r * Math.cos(i / m * 2 * Math.PI), c[1] + r * Math.sin(i / m * 2 * Math.PI)])];
+      }
+      for (const sh of shapes) {
+        // drop repeated points (shared arc ends)
+        const q = [];
+        for (const p of sh) { const l = q[q.length - 1]; if (!l || Math.hypot(p[0] - l[0], p[1] - l[1]) > 1e-6) q.push(p); }
+        while (q.length > 3 && Math.hypot(q[0][0] - q[q.length - 1][0], q[0][1] - q[q.length - 1][1]) < 1e-6) q.pop();
+        if (q.length < 3) continue;
+        cells.push(q); parent.push(ci); nominals.push(Math.abs(area(q)));
+      }
+    });
+    return { cells, nominal: base.nominal * inner * inner * 0.6, nominals, terr: base.cells, parent, concave: base.concave, motif: true };
+  }
+  function tessClassic(t, region, outer, f) {
+    const b = bbox(region), s = t.size, ob = bbox(outer || region);
+    const cells = [];
+    const pad = s * 2;
     if (t.type === 'radial') {
       // Every ring is cut into straight-sided cells (pieces need convex outlines). Two rings share one boundary: the
       // polygon through the outer ring's corners on that circle. A cell's outer side follows that polygon, so it
@@ -257,8 +509,18 @@
       const n0 = Math.max(5, Math.round(t.center || 8));
       const r0 = s * 1.1, TAU = Math.PI * 2;
       const pol = (r, a) => [r * Math.cos(a), r * Math.sin(a)];
-      const rings = [];   // { r: inner radius, n, tw }
-      for (let r = r0, ring = 0; r < maxR; r += s, ring++) rings.push({ r, n: Math.max(n0, Math.round((TAU * (r + s / 2)) / s)), tw: (t.twist || 0) * ring * 0.15 });
+      const rings = [];   // { r: inner radius, w: width, n, tw }
+      const mo = t.mod || {}, S = (mo.type === 'radial' || mo.type === 'ripple') && Math.abs(mo.amount ?? 0.5) > 1e-6 ? sizeFn(mo) : null;
+      if (!S) for (let r = r0, ring = 0; r < maxR; r += s, ring++) rings.push({ r, w: s, n: Math.max(n0, Math.round((TAU * (r + s / 2)) / s)), tw: (t.twist || 0) * ring * 0.15 });
+      else {
+        // rings of changing width (larger toward the edge or the centre, or in waves); each ring is cut into cells
+        // about as long as the ring is wide, so the cells grow and shrink both ways
+        const m = sizeMap(S), mapR = r => maxR * m(r / maxR), radii = [];
+        for (let r = r0; mapR(r) < maxR; r += s) radii.push(mapR(r));
+        if (!radii.length) radii.push(mapR(r0));
+        radii.push(mapR(r0 + radii.length * s));
+        for (let ring = 0; ring < radii.length - 1; ring++) { const r = radii[ring], w = radii[ring + 1] - r; rings.push({ r, w, n: Math.max(n0, Math.round((TAU * (r + w / 2)) / w)), tw: (t.twist || 0) * ring * 0.15 }); }
+      }
       const md = x => ((x % TAU) + TAU) % TAU;
       // the outer side of a cell spanning angles a0..a1 at radius R, where ring nx starts (null: a plain chord)
       const outerSide = (R, a0, a1, nx) => {
@@ -270,17 +532,20 @@
         pts.push(pol(rho(a1), a1));
         return pts.reverse();
       };
+      const rc = rings[0].r;
       for (let k = 0; k < n0; k++) {
         const a0 = (k / n0) * TAU, a1 = ((k + 1) / n0) * TAU;
-        cells.push([[0, 0]].concat(outerSide(r0, a0, a1, rings[0]).reverse()));
+        cells.push([[0, 0]].concat(outerSide(rc, a0, a1, rings[0]).reverse()));
       }
       rings.forEach((g, i) => {
         for (let k = 0; k < g.n; k++) {
           const a0 = (k / g.n) * TAU + g.tw, a1 = ((k + 1) / g.n) * TAU + g.tw;
-          cells.push([pol(g.r, a0), pol(g.r, a1)].concat(outerSide(g.r + s, a0, a1, rings[i + 1])));
+          cells.push([pol(g.r, a0), pol(g.r, a1)].concat(outerSide(g.r + g.w, a0, a1, rings[i + 1])));
         }
       });
-      return { cells, nominal: s * s };
+      const out = { cells, nominal: s * s, quads: cells.map(() => null), ij: cells.map((c, i) => [i, 0, 0]) };
+      if (rings.some(g => g.w !== s)) out.nominals = cells.map(c => Math.abs(area(c)));
+      return out;
     }
     if (t.type === 'voronoi' || t.type === 'sunflower') {
       const D = root.d3 && root.d3.Delaunay;
@@ -310,8 +575,10 @@
       }
       const box = [ob.x0 - 2, ob.y0 - 2, ob.x1 + 2, ob.y1 + 2];
       const iters = t.type === 'sunflower' ? 0 : Math.round(t.relax ?? 3);
-      let polys = null;
+      let polys = null, seeds0 = null;
       for (let it = 0; it <= iters; it++) {
+        // the size map moves the seeds once they are evenly spread: the cells grow and shrink with it
+        if (f && it === iters) { seeds0 = pts; pts = pts.map(p => f(p)); }
         const vor = D.from(pts).voronoi(box);
         polys = pts.map((_, i) => {
           const c = vor.cellPolygon(i); if (!c) return null;
@@ -319,7 +586,10 @@
         });
         if (it < iters) pts = polys.map((pl, i) => { if (!pl) return pts[i]; const q = clipConvex(pl, region); return q.length > 2 ? centroid(q) : pts[i]; });
       }
-      return { cells: polys.filter(Boolean), nominal };
+      const keep = polys.map((p, i) => p ? i : -1).filter(i => i >= 0);
+      const out = { cells: keep.map(i => polys[i]), nominal, quads: keep.map(() => null), ij: keep.map(i => [i, 0, 0]) };
+      if (seeds0) out.nominals = keep.map(i => nominal * f.jac(seeds0[i]));
+      return out;
     }
     throw new Error('unknown tessellation ' + t.type);
   }
@@ -425,7 +695,7 @@
     const region = inset(outer, rim);
     if (!region) throw new Error('המסגרת החיצונית רחבה מדי ביחס לגודל');
     const tz = tessellate(st.tess, region, outer);
-    const minEdge = Math.max(1.2, fr.rib * 0.6);
+    const minEdge = Math.max(1.2, Math.min(3, fr.rib * 0.6));
     // how many cells share a point: a corner of the region belongs to one cell only (0), a point where a cell edge
     // meets the region's edge to two (1), a corner of the tessellation inside the region to three or more (2)
     const pointRank = v => {
@@ -440,18 +710,33 @@
     };
     const q3 = p => p.map(v => [Math.round(v[0] * 1000) / 1000, Math.round(v[1] * 1000) / 1000]);
     const cells = [], rimCells = [];
+    // shapes in cells (motif fill): each cell of the lattice is background, solid frame round the shapes in it.
+    // It stays a cell of its own (ghost) so tile seams and clamps follow the lattice; the shapes take its tile
+    const owner = [];
+    if (tz.terr) tz.terr.forEach((tr, ti) => {
+      const raw = ccw(tr);
+      let tp = clipConvex(raw, outer);
+      if (!tp || tp.length < 3 || Math.abs(area(tp)) < 0.5) { owner[ti] = null; return; }
+      tp = q3(ccw(tp));
+      let p = clipConvex(raw, region);
+      if (p && p.length >= 3) p = ccw(p);
+      if (p && p.length >= 3 && area(p) >= 2) { const g = { poly: p, area: area(p), tpoly: tp, ghost: true }; cells.push(g); owner[ti] = g; }
+      else { const r = { tpoly: tp, c: centroid(tp) }; rimCells.push(r); owner[ti] = r; }
+    });
     for (let ci = 0; ci < tz.cells.length; ci++) {
-      const raw = ccw(tz.cells[ci]);
+      const raw = ccw(tz.cells[ci]), par = tz.parent ? owner[tz.parent[ci]] : null;
+      if (tz.parent && !par) continue;
       let tp = clipConvex(tz.tcells ? ccw(tz.tcells[ci]) : raw, outer);
       if (!tp || tp.length < 3 || Math.abs(area(tp)) < 0.5) continue;
       tp = q3(ccw(tp));
       let p = clipConvex(raw, region);
       if (p && p.length >= 3) p = ccw(p);
+      const nom = tz.nominals ? tz.nominals[ci] : tz.nominal;
       if (p && p.length >= 3 && area(p) >= 2) {
         p = simplify(p, minEdge, pointRank);
-        if (p.length >= 3 && area(p) > 1) { cells.push({ poly: p, area: area(p), tpoly: tp }); continue; }
+        if (p.length >= 3 && area(p) > 1) { cells.push({ poly: p, area: area(p), tpoly: tp, nom, parent: par || undefined }); continue; }
       }
-      rimCells.push({ tpoly: tp, c: centroid(tp) });
+      if (!tz.parent) rimCells.push({ tpoly: tp, c: centroid(tp) });   // a shape outside the region: its cell is frame anyway
     }
     const minFrac = st.tess.minFrac ?? 0.35;
     const t = fr.t, half = fr.rib / 2, clr = fr.clr, gap = fr.gap;
@@ -463,9 +748,9 @@
     cells.forEach((c, i) => {
       c.id = i; c.c = centroid(c.poly);
       c.bb = bbox(c.poly); c.tbb = bbox(c.tpoly); maxExt = Math.max(maxExt, c.tbb.w, c.tbb.h);
-      c.kind = c.area >= minFrac * tz.nominal ? 'piece' : 'blank';
+      c.kind = c.ghost ? 'blank' : c.area >= minFrac * c.nom ? 'piece' : 'blank';
       // with the outer frame hidden, a small cut-off cell on the edge still gets a piece, or the frame would show there
-      if (hideRim && c.kind === 'blank' && onEdge(c)) c.kind = 'piece';
+      if (hideRim && c.kind === 'blank' && !c.ghost && onEdge(c)) c.kind = 'piece';
     });
     rimCells.forEach(r => r.tbb = bbox(r.tpoly));
 
@@ -479,7 +764,7 @@
       const tileOf = (x, y) => Math.min(ny - 1, Math.max(0, Math.floor((ob.y1 - y) / sy))) * nx + Math.min(nx - 1, Math.max(0, Math.floor((x - ob.x0) / sx)));
       const bbs = Array.from({ length: nx * ny }, () => ({ x0: Infinity, y0: Infinity, x1: -Infinity, y1: -Infinity }));
       for (const c of allT) {
-        const cc = c.c || centroid(c.tpoly);
+        const src = c.parent || c, cc = src.c || centroid(src.tpoly);
         c._t = tileOf(cc[0], cc[1]);
         const B = bbs[c._t]; B.x0 = Math.min(B.x0, c.tbb.x0); B.y0 = Math.min(B.y0, c.tbb.y0); B.x1 = Math.max(B.x1, c.tbb.x1); B.y1 = Math.max(B.y1, c.tbb.y1);
       }
@@ -544,7 +829,7 @@
             // no other cell across this edge: it faces the outer frame
             if (edgeDist(m) > 3) return null;
             const q = [m[0] + nx * 0.6, m[1] + ny * 0.6];
-            if (inside(region, q) && cells.some(o => o !== c && o.mergedInto !== c && o.kind !== 'merged' && q[0] >= o.bb.x0 && q[0] <= o.bb.x1 && q[1] >= o.bb.y0 && q[1] <= o.bb.y1 && inside(o.poly, q))) return null;
+            if (inside(region, q) && cells.some(o => o !== c && !o.ghost && o.mergedInto !== c && o.kind !== 'merged' && q[0] >= o.bb.x0 && q[0] <= o.bb.x1 && q[1] >= o.bb.y0 && q[1] <= o.bb.y1 && inside(o.poly, q))) return null;
             return edgeDist(m);   // a simplified edge can cut inside the region: reach the outline anyway
           });
           if (outEdge.some(v => v !== null)) bodyDs = outEdge.map(v => v === null ? gap / 2 : -(rim + v)); else outEdge = null;
@@ -580,7 +865,7 @@
       c.seam = seamFlags(c);
       if (c.kind !== 'piece') return;
       const orig = c.poly;
-      if (!shapeCell(c, orig)) { c.kind = 'blank'; c.poly = orig; c.seam = seamFlags(c); }
+      if (!shapeCell(c, orig, tz.concave)) { c.kind = 'blank'; c.poly = orig; c.seam = seamFlags(c); }
       c.c = centroid(c.kind === 'piece' && c.wrap ? c.body : c.poly);   // an edge piece rises from the middle of its wider base
     });
     if (hideRim) {
@@ -590,7 +875,7 @@
       const grow = p => { const cc = centroid(p); return p.map(v => [cc[0] + (v[0] - cc[0]) * 1.002, cc[1] + (v[1] - cc[1]) * 1.002]); };
       const rg = p => { const r = q3(p); r.push(r[0]); return r; };
       for (const b of cells) {
-        if (b.kind !== 'blank' || !onEdge(b)) continue;
+        if (b.kind !== 'blank' || b.ghost || tz.motif || !onEdge(b)) continue;
         const share = new Map();
         for (let i = 0; i < b.poly.length; i++) {
           const a = b.poly[i], e = b.poly[(i + 1) % b.poly.length], L = Math.hypot(e[0] - a[0], e[1] - a[1]) || 1;
@@ -844,14 +1129,19 @@
     // rectangle along the seam: |s| <= hu along u, n0..n1 across it
     const rectAt = (m, u, n, hu, n0, n1) => ccw([[-hu, n0], [hu, n0], [hu, n1], [-hu, n1]].map(([s, d]) => [m[0] + u[0] * s + n[0] * d, m[1] + u[1] * s + n[1] * d]));
     // the clamp and the solid frame round it must stay clear of every other cell's opening
-    const clampFits = (m, u, n, c, o) => {
+    // (a seam between two background cells of shapes-in-cells: the shapes of those two cells that reach into the
+    // clamp's room are listed in near, to be notched like the pieces beside an ordinary seam)
+    const clampFits = (m, u, n, c, o, near) => {
       const big = rectAt(m, u, n, Lc / 2 + cMargin, -(cD + cMargin), cD + cMargin);
       const bb = bbox(big), r = [big.concat([big[0]])];
       for (const op of openList) {
         if (op.c === c || op.c === o) continue;
         if (op.bb.x0 > bb.x1 || op.bb.x1 < bb.x0 || op.bb.y0 > bb.y1 || op.bb.y1 < bb.y0) continue;
         let hit; try { hit = root.polygonClipping.intersection(r, op.ring); } catch (e) { return false; }
-        if (hit.some(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.01)) return false;
+        if (hit.some(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.01)) {
+          if (near && op.c.parent && (op.c.parent === c || op.c.parent === o)) { near.push(op.c); continue; }
+          return false;
+        }
       }
       // nor run into another clamp
       const reach = 2 * Math.hypot(Lc / 2 + cMargin, cD + cMargin);
@@ -861,11 +1151,13 @@
     // none (no opening there, or the rib already reaches), false when it does not fit. It must leave a printable
     // wall between itself and the rest of the collar, and not touch X's other notches
     // (the frame fills it out to D; the piece's collar makes room out to Dc, for the clamp's leg)
-    const notchFor = (X, m, u, D, W, Dc) => {
+    // far: X is a shape a little way from the seam (shapes in cells); its nearest straight side parallel to the
+    // seam takes the notch, shallower by the distance to the seam
+    const notchFor = (X, m, u, D, W, Dc, far) => {
       if (X.kind !== 'piece' || !X.opening || X.mount) return null;
       if (D <= half + 0.05) return null;
       const P = X.poly, n = P.length;
-      let k = -1, bestD = 0.6;
+      let k = -1, bestD = far ? D : 0.6;
       for (let i = 0; i < n; i++) {
         const a = P[i], b = P[(i + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
         if (L < 1e-9) continue;
@@ -873,9 +1165,11 @@
         if (Math.abs(ux * u[0] + uy * u[1]) < 0.985) continue;
         const t = (m[0] - a[0]) * ux + (m[1] - a[1]) * uy, d = Math.abs((m[0] - a[0]) * -uy + (m[1] - a[1]) * ux);
         if (t < 0 || t > L || d >= bestD) continue;
+        if (far && (m[0] - a[0]) * -uy + (m[1] - a[1]) * ux > 1e-6) continue;   // the seam must lie outside this side
         bestD = d; k = i;
       }
       if (k < 0) return false;
+      if (far) { D -= bestD; Dc = (Dc ?? D + bestD) - bestD; if (D <= half + 0.05) return null; }
       const a = P[k], b = P[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]), uk = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], nIn = [-uk[1], uk[0]];
       const sm = (m[0] - a[0]) * uk[0] + (m[1] - a[1]) * uk[1];
       const sp = { o: a, uk, nIn, s1: sm - W / 2, s2: sm + W / 2, D, Dc: Dc ?? D };
@@ -915,10 +1209,13 @@
         // the clamp must stay on this edge with room to spare at both ends
         if (Math.min(f, 1 - f) * L < Lc / 2 + cMargin) continue;
         const m = [a[0] + (b[0] - a[0]) * f, a[1] + (b[1] - a[1]) * f];
-        if (!clampFits(m, u, n, c, o)) continue;
+        const near = c.ghost || o.ghost ? [] : null;
+        if (!clampFits(m, u, n, c, o, near)) continue;
         const nC = notchFor(c, m, u, CS.cg, Lc, cD), nO = notchFor(o, m, u, CS.cg, Lc, cD);
         if (nC === false || nO === false) continue;
-        for (const [X, nt] of [[c, nC], [o, nO]]) if (nt) { if (!notchesOf.has(X)) notchesOf.set(X, []); notchesOf.get(X).push(nt); }
+        const nN = (near || []).map(X => [X, notchFor(X, m, u, CS.cg, Lc, cD, true)]);
+        if (nN.some(([, nt]) => nt === false)) continue;
+        for (const [X, nt] of [[c, nC], [o, nO]].concat(nN)) if (nt) { if (!notchesOf.has(X)) notchesOf.set(X, []); notchesOf.get(X).push(nt); }
         clamps.push({ tiles: [c.tile, o.tile], m, u, n });
         return true;
       }
@@ -1214,7 +1511,7 @@
       if (bare) warnings.push({ kind: 'warn', text: `${bare} חיבורים בין אריחים נשארו בלי חבק, כי לא היה מקום בטוח לשים אותו. אפשר לקצר את "אורך החבק" או להגדיל את גודל התא.` });
     }
     if (hideRim) {
-      const openEdge = cells.filter(c => c.kind === 'blank' && onEdge(c)).length + rimCells.filter(r => Math.abs(area(r.tpoly)) > 4).length;
+      const openEdge = tz.motif ? 0 : cells.filter(c => c.kind === 'blank' && !c.ghost && onEdge(c)).length + rimCells.filter(r => Math.abs(area(r.tpoly)) > 4).length;
       if (openEdge) warnings.push({ kind: 'info', text: `המסגרת ההיקפית מוסתרת, אבל ${openEdge} מקומות בשוליים קטנים מדי לחלק, ושם המסגרת נראית. אפשר לשנות מעט את גודל התא או את גודל הפאנל.` });
     }
     if (shortened) warnings.push({ kind: 'info', text: `${shortened} קודקודים קוצרו כדי שלא ייכנסו בשכנים או כדי שיודפסו בלי תמיכות. אפשר להוריד את ה"הטיה" או את ה"קימור", או להעלות את "גובה מינימלי".` });
@@ -1255,8 +1552,8 @@
     if (big.length) warnings.push({ kind: 'warn', text: `${big.length} חלקים רחבים ממשטח ההדפסה.` });
 
     return {
-      outer, region, frameOuter, hideRim, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank'), seams,
-      tiles: usedTiles, tileGrid: P, islandPolys, clamps, clampSpec: CS, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominal,
+      outer, region, frameOuter, hideRim, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank' && !c.ghost), seams,
+      tiles: usedTiles, tileGrid: P, islandPolys, clamps, clampSpec: CS, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominals && pieces.length ? pieces.reduce((s, c) => s + c.nom, 0) / pieces.length : tz.nominal, motif: !!tz.motif,
       bounds: ob
     };
   }
@@ -1745,7 +2042,7 @@
       if (!col) {
         const r0 = m.ring(c.collar, zr);
         const lab = opts && opts.label && c.num ? placeLabel(c.num, c.collar, null) : null;
-        if (lab) engraveFace(m, [r0], lab, zr, 0.4); else m.capDown(r0);
+        if (lab) engraveFace(m, [r0], lab, zr, 0.4); else if (isConvexCCW(c.collar)) m.capDown(r0); else capRings(m, [r0], false);
         m.wall(r0, r1);
       } else {
         // notches for the frame's dovetails: the column inside the frame follows the notched outline (top ring
@@ -1792,7 +2089,12 @@
       const r = l.poly.map((p, i) => K && K[i] > k0 + 1 ? prev[i] : m.pt(p[0], p[1], l.zv ? l.zv[i] : l.z));
       m.wallJ(prev, r); prev = r;
     });
-    if (c.tipFlat) { m.capUp(prev); return m; }
+    if (c.tipFlat) {
+      // a bent (non-convex) outline gets a proper triangulation; a fan would fold over itself
+      const top = prev.map(i => [m.v[i * 3], m.v[i * 3 + 1]]);
+      if (isConvexCCW(top)) m.capUp(prev); else capRings(m, [prev], true);
+      return m;
+    }
     const a = m.pt(c.apex[0], c.apex[1], c.zApex);
     for (let i = 0; i < prev.length; i++) m.tri(prev[i], prev[(i + 1) % prev.length], a);
     return m;

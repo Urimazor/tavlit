@@ -12,6 +12,12 @@ const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'tavlit-fit-'));
   // a small Voronoi panel that prints as one tile: the seam comes from a split it would get on a smaller bed
   const sw = (P.presets || []).find(p => p.key === 'swirl');
   if (sw) { const s1 = JSON.parse(JSON.stringify(sw.state)); s1.shape.w = 150; s1.shape.h = 150; cases.push(['swirl-small', s1]); }
+  // patterns from section 2, on the 24 cm Voronoi preset (two tiles): shapes in cells and bent lattices too
+  if (sw) for (const k of ['flowers', 'halves', 'dots', 'waves', 'cubes']) {
+    const pt = (P.patterns || []).find(p => p.key === k); if (!pt) continue;
+    const s1 = JSON.parse(JSON.stringify(sw.state)); s1.tess = Object.assign({}, s1.tess, JSON.parse(JSON.stringify(pt.tess)), { mod: Object.assign({}, s1.tess.mod, pt.tess.mod || {}), warp: Object.assign({}, s1.tess.warp, pt.tess.warp || {}) });
+    cases.push(['pattern-' + k, s1]);
+  }
   for (const [name, st] of cases) {
     let m; try { m = WallEngine.build(st, true); } catch (e) { console.log(name, 'build failed', e.message); continue; }
     const t = Date.now(), r = await WallKit.buildShapeFitTest(m, st, JSZip);
