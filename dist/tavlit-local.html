@@ -192,7 +192,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     <button id="redoBtn" class="icon-btn" title="בצע שוב" aria-label="בצע שוב"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 7h7v-4M17 7a8 8 0 1 0 2 6"/></svg></button>
     <button id="saveBtn" class="icon-btn">שמור עיצוב</button>
     <label class="icon-btn" for="loadFile" style="cursor:pointer">טען עיצוב</label>
-    <input id="loadFile" type="file" accept=".json,application/json" hidden>
+    <input id="loadFile" type="file" accept=".json,application/json,.zip,application/zip" hidden>
   </header>
 
   <aside class="panel" id="panel" aria-label="הגדרות"></aside>
@@ -2431,6 +2431,9 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     return z.generateAsync({ type: 'uint8array', compression: 'DEFLATE' });
   }
 
+  // every kit carries the design it was made from, in the same format as "save design", so it can be loaded back
+  function addDesign(zip, st) { zip.file('design.json', JSON.stringify(st, null, 2)); }
+
   async function buildKit(model, st, JSZip, opts = {}) {
     const pr = st.print, fr = st.frame;
     const zip = new JSZip();
@@ -2509,7 +2512,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
         am.file(`a4-row${j + 1}-col${i + 1}.svg`, assemblySVG(model, st, win, `A4 ${j + 1}/${ny} - ${i + 1}/${nx}`));
       }
     }
-    zip.file('design.json', JSON.stringify(st, null, 2));
+    addDesign(zip, st);
     zip.file('README.txt', readme(model, st, summary, nx * ny));
     return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), summary };
   }
@@ -2611,7 +2614,8 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
     const zip = new JSZip();
     zip.file('fit-test.3mf', await zip3mf(JSZip, objs, fr.color || '#85898c'));
     zip.file('fit-test.stl', E.stlBinary(merged, 'fit test'));
-    zip.file('README.txt', ['בדיקת התאמה ל-MK4', '', 'הדפס את הקובץ (פלטה אחת, בלי תמיכות), ונסה לנעוץ כל חלק בתא שלו.', 'בחר את החלק הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו באפליקציה תחת "מרווח התאמה".', 'המסגרת מודפסת בשני חלקים, ויש איתה חמישה חבקים כמו אלה שמחזיקים את האריחים האמיתיים. הצמד את שני החלקים ולחץ חבק לתוך המגרעת שבחיבור, מלמעלה.', 'בחר את החבק הראשון שנכנס בלחיצת אצבע, יושב בגובה המסגרת ומחזיק את שני החלקים צמודים, והזן את המרווח שלו באפליקציה תחת "מרווח בחבק". את החבקים סופרים לפי החריצים הקטנים בגג.', '', ...lines, '', ...clLines].join('\r\n'));
+    addDesign(zip, st);
+    zip.file('README.txt', ['בדיקת התאמה ל-MK4', '', 'הדפס את הקובץ (פלטה אחת, בלי תמיכות), ונסה לנעוץ כל חלק בתא שלו.', 'בחר את החלק הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו באפליקציה תחת "מרווח התאמה".', 'המסגרת מודפסת בשני חלקים, ויש איתה חמישה חבקים כמו אלה שמחזיקים את האריחים האמיתיים. הצמד את שני החלקים ולחץ חבק לתוך המגרעת שבחיבור, מלמעלה.', 'בחר את החבק הראשון שנכנס בלחיצת אצבע, יושב בגובה המסגרת ומחזיק את שני החלקים צמודים, והזן את המרווח שלו באפליקציה תחת "מרווח בחבק". את החבקים סופרים לפי החריצים הקטנים בגג.', '', ...lines, '', ...clLines, '', 'design.json: העיצוב שממנו נוצרה הבדיקה. אפשר לטעון אותו בחזרה באפליקציה ("טען עיצוב") ולהמשיך לערוך.'].join('\r\n'));
     return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   }
 
@@ -2769,6 +2773,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       zip.file(nm + '.stl', E.stlBinary(merged, nm));
     }
     zip.file('fit-map.svg', sectionSVG(model, st, sec));
+    addDesign(zip, st);
     zip.file('README.txt', [
       `בדיקת התאמה מתוך העיצוב: ${st.name || 'פאנל'}`, '',
       `זה קטע אמיתי מהמסגרת שלך: התפר בין אריח ${tA.label} לאריח ${tB.label}, עם ${sec.clamps.length} מקומות לחבקים ו-${pcs.length} תאים משני הצדדים, בדיוק בצורה שלהם (בוורונוי התפר מזוגזג לפי גבולות התאים).`,
@@ -2778,7 +2783,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
       `החבקים בלי חריצים מודפסים לפי ההגדרה הנוכחית (${S.cc.toFixed(2)} מ"מ), אחד לכל מקום. החבקים עם החריצים בודקים מרווחים אחרים: בחר את הראשון שנכנס בלחיצת אצבע ומחזיק את שני החלקים צמודים, והזן את המרווח שלו תחת "מרווח בחבק".`,
       'אחר כך נעץ כל חלק בתא שלו (המספר שקוע בתחתית החלק ותואם את המפה). כל חלק מודפס במרווח אחר; בחר את הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו תחת "מרווח התאמה".',
       'החלקים שליד חבק בודקים גם את המגרעת לרגל החבק: הם צריכים להיכנס כשהחבק כבר במקום.', '',
-      ...lines, '', ...clLines].join('\r\n'));
+      ...lines, '', ...clLines, '', 'design.json: העיצוב שממנו נוצרה הבדיקה. אפשר לטעון אותו בחזרה באפליקציה ("טען עיצוב") ולהמשיך לערוך.'].join('\r\n'));
     return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), section: { tiles: [tA.label, tB.label], clamps: sec.clamps.length, pieces: pcs.length, plates: plates.length, clearances: vals, virtual: virt }, placed };
   }
 
@@ -3765,7 +3770,16 @@ $('#fitBtn').addEventListener('click', async () => {
 $('#saveBtn').addEventListener('click', () => offerFile('tavlit-design.json', new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' })));
 $('#loadFile').addEventListener('change', async e => {
   const f = e.target.files[0]; if (!f) return;
-  try { state = normalize(JSON.parse(await f.text())); selPoint = 0; selBand = 0; commit(); renderPanel(); schedule(); lastSize = null; toast('העיצוב נטען.'); }
+  try {
+    // a design file, or a print kit / fit test zip, which carries its design.json
+    let txt;
+    if (/\.zip$/i.test(f.name) || f.type.includes('zip')) {
+      const z = await window.JSZip.loadAsync(await f.arrayBuffer());
+      const d = z.file('design.json') || z.file(/(^|\/)design\.json$/)[0];
+      if (!d) throw new Error('no design.json');
+      txt = await d.async('string');
+    } else txt = await f.text();
+    state = normalize(JSON.parse(txt)); selPoint = 0; selBand = 0; commit(); renderPanel(); schedule(); lastSize = null; toast('העיצוב נטען.'); }
   catch (err) { toast('הקובץ לא נראה כמו עיצוב שנשמר מכאן.'); }
   e.target.value = '';
 });

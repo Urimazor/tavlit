@@ -26,6 +26,9 @@ function stlOpenEdges(buf) {
   const rd = await kz.file('README.txt').async('string'); if (m.clamps.length && !rd.includes('חבק')) { console.log('README misses clamps'); process.exit(1); }
   const b = await WallKit.buildFitTest(st, JSZip);
   const fz = await JSZip.loadAsync(Buffer.from(await b.arrayBuffer()));
+  for (const [nm, zz] of [['kit', kz], ['fit test', fz]]) {
+    const d = zz.file('design.json'); if (!d || JSON.stringify(JSON.parse(await d.async('string')).shape) !== JSON.stringify(st.shape)) { console.log(nm, 'misses design.json'); process.exit(1); }
+  }
   const stl = await fz.file('fit-test.stl').async('nodebuffer');
   const bad = stlOpenEdges(stl);
   console.log('fit test', stl.length, 'bytes, open edges', bad);

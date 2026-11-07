@@ -45,6 +45,13 @@ const map = [
   await dl.saveAs(OUT + 'ui-kit.zip'); console.log('kit downloaded', dl.suggestedFilename(), fs.statSync(OUT + 'ui-kit.zip').size);
   const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#fitBtn')]);
   console.log('fit downloaded', dl2.suggestedFilename());
+  // load a downloaded fit test zip back: its design.json restores the design
+  await dl2.saveAs(OUT + 'ui-fit.zip');
+  const nm0 = await page.evaluate(() => window.__tavlit.state && window.__tavlit.state.name);
+  await page.fill('#designName', 'zzz'); await page.dispatchEvent('#designName', 'change');
+  await page.setInputFiles('#loadFile', OUT + 'ui-fit.zip'); await page.waitForTimeout(800);
+  const nm1 = await page.inputValue('#designName');
+  console.log('loaded from fit zip:', nm1, nm1 !== 'zzz' ? 'ok' : 'FAILED'); if (nm1 === 'zzz') errors.push('load from zip failed');
   // map tab
   await page.click('#tabMap'); await page.waitForTimeout(400); await page.screenshot({ path: OUT + 'shot-map.png' }); await page.click('#tab3d');
   // add a point via plan canvas

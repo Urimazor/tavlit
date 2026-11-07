@@ -21,7 +21,9 @@ const OUT = fs.mkdtempSync(path.join(os.tmpdir(), 'tavlit-fit-'));
     const stls = Object.keys(z.files).filter(f => f.endsWith('.stl'));
     let bad = 0; for (const f of stls) bad += stlOpenEdges(await z.file(f).async('nodebuffer'));
     console.log(name, JSON.stringify(r.section), 'open edges', bad, (Date.now() - t) + 'ms');
-    if (bad || r.section.clamps < Math.min(2, m.clamps.length) || r.section.pieces < 2) fail++;
+    const dj = z.file('design.json'), dOk = !!dj && JSON.stringify(JSON.parse(await dj.async('string'))) === JSON.stringify(st);
+    if (!dOk) console.log(name, 'design.json missing or different');
+    if (!dOk || bad || r.section.clamps < Math.min(2, m.clamps.length) || r.section.pieces < 2) fail++;
   }
   console.log('out', OUT);
   process.exit(fail ? 1 : 0);
