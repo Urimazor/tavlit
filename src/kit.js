@@ -21,6 +21,7 @@
     out.push(`<rect x="${fmt(vb[0])}" y="${fmt(vb[1])}" width="${fmt(vb[2])}" height="${fmt(vb[3])}" fill="#fff"/>`);
     out.push(`<path d="${polyPath(model.outer, fy)}" fill="#e9e9e6" stroke="#333" stroke-width="0.4"/>`);
     model.cells.forEach(c => {
+      if (c.ghost) { out.push(`<path d="${polyPath(c.poly, fy)}" fill="#cfcfca" stroke="#cfcfca" stroke-width="0.3"/>`); return; }   // background of shapes in cells: solid frame
       if (c.kind === 'blank') { out.push(`<path d="${polyPath(c.poly, fy)}" fill="#cfcfca" stroke="#999" stroke-width="0.2"/>`); return; }
       const col = st.color.bands[c.band];
       out.push(`<path d="${polyPath(c.opening, fy)}" fill="${col}" fill-opacity="0.85" stroke="#222" stroke-width="0.25"/>`);
@@ -299,6 +300,8 @@
             const a = c.poly[j], b = c.poly[(j + 1) % c.poly.length], ta = pj(a), tb = pj(b);
             return Math.max(ta, tb) >= t0 && Math.min(ta, tb) <= t1;
           }));
+          // shapes in cells: the shapes inside the background cells of the stretch come along
+          if (model.motif) model.cells.forEach(c => { if (c.parent && cells.includes(c.parent) && !cells.includes(c)) cells.push(c); });
           if (!cells.some(c => c.tile === A) || !cells.some(c => c.tile === B) || cells.some(c => c.mount)) continue;
           const side = id => { const pts = []; cells.filter(c => c.tile === id).forEach(c => (E.inset(c.tpoly, -half, true) || c.tpoly).forEach(q => pts.push(q))); return E.bbox(pts); };
           const bA = side(A), bB = side(B);
@@ -354,7 +357,7 @@
     // each half only from its own cells (a strip round the other tile's cells would pull in a stub of this tile's
     // seam rib past the end of the stretch)
     const clipOf = id => { const r0 = half + 0.05, parts = [];
-    sec.cells.filter(c => c.tile === id).forEach(c => {
+    sec.cells.filter(c => c.tile === id && !c.parent).forEach(c => {   // a shape in a cell lies inside its background cell
       const P = c.tpoly; parts.push([ring(E.ccw(P))]);
       P.forEach((a, i) => {
         const b = P[(i + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]); if (L < 1e-6) return;
@@ -363,7 +366,8 @@
         parts.push([ring(Array.from({ length: 12 }, (_, k) => [a[0] + r0 * 1.04 * Math.cos(k * Math.PI / 6), a[1] + r0 * 1.04 * Math.sin(k * Math.PI / 6)]))]);
       });
     });
-    return PC.union(...parts); };
+    // polygon-clipping now and then trips on nearly equal points: retry on coordinates snapped to 1 micron
+    try { return PC.union(...parts); } catch (e) { return PC.union(...parts.map(pp => pp.map(r => r.map(q => [Math.round(q[0] * 1000) / 1000, Math.round(q[1] * 1000) / 1000])))); } };
     const tA = model.tiles.find(t => t.id === sec.A), tB = model.tiles.find(t => t.id === sec.B);
     const fA = tA && cutTile(tA, clipOf(sec.A)), fB = tB && cutTile(tB, clipOf(sec.B));
     if (!fA || !fB) return null;

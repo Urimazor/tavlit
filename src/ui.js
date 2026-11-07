@@ -30,6 +30,11 @@ function normalize(s) {
   // Uri (2026-11-04): press-fit 0.05 -> 0.07 and tile dovetails 0.1 -> 0.2 by default. Designs still on the
   // previous defaults move up; values someone set by hand stay.
   if (s.fitCal < 3) { if (s.frame.clr === 0.05) s.frame.clr = 0.07; if (s.frame.jointClr === 0.1) s.frame.jointClr = 0.2; s.fitCal = 3; }
+  // patterns (section 2): designs from before the pattern editor get its defaults, so they look exactly the same
+  const TD = clone(PR.TESS);
+  s.tess = Object.assign(TD, s.tess || {});
+  s.tess.mod = Object.assign(clone(PR.TESS.mod), s.tess.mod || {});
+  s.tess.warp = Object.assign(clone(PR.TESS.warp), s.tess.warp || {});
   s.frame.hang = Object.assign({ on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 }, s.frame.hang || {});
   if (!Array.isArray(s.color.bands) || !s.color.bands.length) s.color.bands = base.color.bands;
   s.name = s.name || 'עיצוב חדש';
@@ -95,7 +100,83 @@ function section(key, n, title, summary, body) {
 }
 
 const SHAPES = [['rect', 'מלבן'], ['circle', 'עיגול'], ['ellipse', 'אליפסה'], ['hexagon', 'משושה'], ['octagon', 'מתומן']];
-const TESS = [['hex', 'משושים'], ['square', 'ריבועים'], ['triangle', 'משולשים'], ['radial', 'רדיאלי'], ['voronoi', 'וורונוי'], ['sunflower', 'חמנייה']];
+const TESS = [['hex', 'משושים'], ['square', 'ריבועים'], ['triangle', 'משולשים'], ['radial', 'רדיאלי'], ['voronoi', 'וורונוי'], ['sunflower', 'חמנייה'],
+  ['brick', 'לבנים'], ['basket', 'קליעה'], ['rhombille', 'קוביות'], ['trihex', 'משושים ומשולשים'], ['octsquare', 'מתומנים וריבועים']];
+const LATTICES = ['hex', 'square', 'triangle', 'brick', 'basket', 'rhombille', 'trihex', 'octsquare'];
+const QUAD_LATTICES = ['square', 'brick', 'basket', 'rhombille'];
+const FILLS = [['full', 'ריצוף מלא · מרווח אחיד'], ['motif', 'צורות בתאים · מרווחים משתנים']];
+const MOTIFS = [['quarter', 'רבע עיגול', true], ['half', 'חצאי עיגול', true], ['leaf', 'עלה', true], ['tri', 'משולש', true], ['circle', 'עיגול'], ['mid', 'יהלום'], ['shrink', 'צורת התא']];
+const ARRS = [['random', 'אקראי'], ['same', 'הכול באותו כיוון'], ['checker', 'שחמט'], ['rows', 'מתחלף בשורות'], ['cols', 'מתחלף בטורים'], ['block', 'פרחים (2×2 פנימה)'], ['blockOut', 'פרחים הפוכים (2×2 החוצה)'], ['spin', 'סחרור (2×2)']];
+const VARY = [['none', 'אחיד'], ['center', 'קטן לכיוון השוליים'], ['edge', 'קטן לכיוון המרכז'], ['linear', 'מעבר'], ['wave', 'גלים'], ['ripple', 'אדוות'], ['random', 'אקראי']];
+const MODS = [['none', 'בלי'], ['radial', 'מרכז ← שוליים'], ['linear', 'מעבר לאורך'], ['wave', 'גלי גודל'], ['ripple', 'אדוות']];
+const PAT_KEY = 'tavlit-patterns-v1';
+function myPatterns() { try { return JSON.parse(localStorage.getItem(PAT_KEY) || '[]'); } catch (e) { return []; } }
+function saveMyPatterns(list) { try { localStorage.setItem(PAT_KEY, JSON.stringify(list)); } catch (e) { toast('הדפדפן לא מאפשר לשמור כאן. התבנית נשמרת ממילא בתוך העיצוב (שמור עיצוב).'); } }
+// a small picture of a pattern: its cells (or its shapes on the background) over a square about five cells wide
+const thumbCache = new Map();
+function patternThumb(tess) {
+  const key = JSON.stringify(tess);
+  if (thumbCache.has(key)) return thumbCache.get(key);
+  let svg = '';
+  try {
+    const t = Object.assign(clone(PR.TESS), clone(tess)); t.mod = Object.assign(clone(PR.TESS.mod), tess.mod || {}); t.warp = Object.assign(clone(PR.TESS.warp), tess.warp || {});
+    const H = Math.max(50, Math.min(220, t.size * (t.fill === 'motif' ? 2.6 : 3.4)));
+    const sc = 48 / H, region = [[-H, -H], [H, -H], [H, H], [-H, H]];
+    const tz = E.tessellate(t, region, region);
+    const P = p => p.map(q => ((q[0] + H) * sc).toFixed(1) + ',' + ((H - q[1]) * sc).toFixed(1)).join(' ');
+    const cols = ['#c8553d', '#2d3a5a', '#7fa88a', '#e9b44c', '#8c7bb8'];
+    const parts = [];
+    if (tz.terr) parts.push(`<rect width="96" height="96" fill="#cfcac0"/>`);
+    tz.cells.forEach((c, i) => {
+      const cx = c.reduce((a, q) => a + q[0], 0) / c.length, cy = c.reduce((a, q) => a + q[1], 0) / c.length;
+      if (Math.abs(cx) > H * 1.3 || Math.abs(cy) > H * 1.3) return;
+      parts.push(`<polygon points="${P(c)}" fill="${cols[(i * 7 + (i >> 3)) % 5]}" stroke="${tz.terr ? 'none' : '#f4f1ea'}" stroke-width="${tz.terr ? 0 : 1.2}"/>`);
+    });
+    svg = `<svg viewBox="0 0 96 96" width="56" height="56" aria-hidden="true">${parts.join('')}</svg>`;
+  } catch (e) { svg = ''; }
+  thumbCache.set(key, svg);
+  return svg;
+}
+function fullPattern(tess) {
+  const t = Object.assign(clone(PR.TESS), { relax: 3, seed: 1, twist: 0, center: 8 }, clone(tess));
+  t.mod = Object.assign(clone(PR.TESS.mod), tess.mod || {});
+  t.warp = Object.assign(clone(PR.TESS.warp), tess.warp || {});
+  delete t.minFrac;
+  return t;
+}
+const sortedJSON = o => JSON.stringify(o, (k, v) => v && typeof v === 'object' && !Array.isArray(v) ? Object.fromEntries(Object.keys(v).sort().map(x => [x, v[x]])) : v);
+function applyPattern(tess) {
+  state.tess = Object.assign(fullPattern(tess), { minFrac: state.tess.minFrac });
+  commit(); renderPanel(); schedule();
+}
+function patternGallery() {
+  const cur = sortedJSON(fullPattern(state.tess));
+  const card = (p, onDel) => {
+    const same = sortedJSON(fullPattern(p.tess)) === cur;
+    const b = el('button', { class: 'pat', 'aria-pressed': String(same), title: p.label, onclick: () => applyPattern(p.tess) });
+    b.innerHTML = patternThumb(p.tess);
+    b.append(el('span', {}, p.label)); if (p.orig) b.append(el('small', {}, 'מקורי'));
+    if (!onDel) return b;
+    const del = el('button', { class: 'pat-del', 'aria-label': 'מחק את ' + p.label, title: 'מחק', onclick: e => { e.stopPropagation(); onDel(); } }, '×');
+    return el('div', { class: 'pat-wrap' }, b, del);
+  };
+  const mine = myPatterns();
+  return el('div', {},
+    el('div', { class: 'pats' }, PR.patterns.map(p => card(p))),
+    mine.length ? el('div', { class: 'field-label' }, 'התבניות שלי') : null,
+    mine.length ? el('div', { class: 'pats' }, mine.map((p, i) => card(p, () => { const l = myPatterns(); l.splice(i, 1); saveMyPatterns(l); renderPanel(); }))) : null);
+}
+function savePatternRow() {
+  const inp = el('input', { class: 'name-input pat-name', placeholder: 'שם לתבנית', 'aria-label': 'שם לתבנית' });
+  const save = () => {
+    const nm = inp.value.trim() || ('תבנית ' + (myPatterns().length + 1));
+    const t = clone(state.tess); delete t.minFrac;
+    const l = myPatterns(); l.push({ key: 'my' + Date.now(), label: nm, tess: t }); saveMyPatterns(l);
+    toast('התבנית נשמרה ב"התבניות שלי".'); renderPanel();
+  };
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') save(); });
+  return el('div', { class: 'btn-row' }, inp, el('button', { class: 'btn small', onclick: save }, 'שמור כתבנית'));
+}
 const SURF = [['flat', 'שטוח'], ['dome', 'כיפה'], ['bowl', 'קערה'], ['cone', 'חרוט'], ['ring', 'טבעת'], ['wave', 'גל'], ['ripple', 'אדוות'], ['tilt', 'שיפוע'], ['noise', 'אורגני']];
 const CUTBY = [['field', 'לפי התנועה'], ['radial', 'מהמרכז החוצה'], ['spiral', 'ספירלה'], ['surface', 'שיפוע פני השטח'], ['fixed', 'כיוון קבוע']];
 const COLBY = [['height', 'לפי גובה'], ['gradient', 'מעבר'], ['radial', 'מהמרכז'], ['field', 'לפי תנועה'], ['random', 'אקראי']];
@@ -121,16 +202,63 @@ function renderPanel() {
     s.frame.hideRim ? el('p', { class: 'hint' }, 'המסגרת ההיקפית מוסתרת בתוך החלקים (ב"מסגרת והתאמה"), ולכן אין שוליים גלויים.') : slider('שוליים', 'המסגרת החיצונית', 'shape.rim', 3, 30, 0.5, 'מ"מ')
   ]));
 
-  // 2 pieces / tessellation
-  const t = s.tess;
-  panel.append(section('tess', 2, 'חלקים', `${name(TESS, t.type)} · תא ${t.size} מ"מ`, [
+  // 2 pattern: the lattice of cells, its size and bends, and what fills each cell
+  const t = s.tess, isLat = LATTICES.includes(t.type), quadOK = QUAD_LATTICES.includes(t.type), motif = t.fill === 'motif';
+  const mi = MOTIFS.find(x => x[0] === t.motif) || MOTIFS[0], quadMotif = !!mi[2] && quadOK;
+  const md = t.mod, wp = t.warp, radialMods = ['radial', 'ripple'];
+  const modList = t.type === 'radial' ? MODS.filter(x => x[0] === 'none' || radialMods.includes(x[0])) : MODS;
+  panel.append(section('tess', 2, 'תבנית - דוגמה', `${name(TESS, t.type)}${motif ? ' · ' + mi[1] : ''}${md.type !== 'none' ? ' · ' + name(MODS, md.type) : ''}${wp.amp > 0 && t.type !== 'radial' ? ' · גלי' : ''} · תא ${t.size} מ"מ`, [
+    el('p', { class: 'hint' }, 'התבנית קובעת איך המשטח מתחלק לחלקים. אפשר להתחיל מתבנית בסיס ולשנות כל דבר: את הרשת, את הגודל שמשתנה לאורך הפאנל (גדול במרכז וקטן בשוליים, מעבר הדרגתי, גלים), את הגליות של הקווים, ואת מה שממלא כל תא.'),
+    el('div', { class: 'field-label' }, 'תבניות בסיס'),
+    patternGallery(),
+    el('div', { class: 'field-label' }, 'רשת'),
     chips('', 'tess.type', TESS),
     slider('גודל תא', 'רוחב חלק אחד', 'tess.size', 14, 90, 1, 'מ"מ', { hardMin: 10 }),
+    isLat ? slider('סיבוב הרשת', '', 'tess.rot', -90, 90, 1, '°') : null,
+    t.type === 'brick' ? slider('יחס אורך לגובה', 'של כל לבנה', 'tess.ratio', 1, 4, 0.1, '') : null,
     t.type === 'voronoi' ? slider('סדר', 'כמה התאים אחידים', 'tess.relax', 0, 8, 1, '') : null,
     t.type === 'voronoi' ? el('div', { class: 'btn-row' }, el('button', { class: 'btn small', onclick: () => { t.seed = (t.seed || 1) + 1; commit(); schedule(); } }, 'פיזור אחר')) : null,
     t.type === 'radial' ? slider('פיתול', 'הזזת כל טבעת', 'tess.twist', -3, 3, 0.1, '') : null,
     t.type === 'radial' ? slider('חלקים במרכז', '', 'tess.center', 5, 16, 1, '') : null,
-    slider('תא קטן מינימלי', 'קטן מזה נשאר סגור במסגרת', 'tess.minFrac', 0.1, 0.8, 0.05, '')
+
+    el('div', { class: 'field-label' }, 'מילוי התאים'),
+    chips('', 'tess.fill', FILLS),
+    !motif ? el('p', { class: 'hint' }, 'החלקים מכסים את כל המשטח, ובין כל שני חלקים אותו מרווח בדיוק.') : null,
+    !motif ? slider('מרווח בין החלקים', 'אותו מרווח בכל הפאנל', 'frame.gap', 0.1, 12, 0.1, 'מ"מ', {
+      onChange: v => { if (v > s.frame.rib) s.frame.rib = Math.round(v * 10) / 10; else if (s.frame.rib > 2.4) s.frame.rib = Math.max(2.4, Math.round(v * 10) / 10); }
+    }) : null,
+    motif ? el('p', { class: 'hint' }, 'בכל תא של הרשת יושבת צורה, לפי חוקיות קבועה. התאים עצמם הופכים לרקע: המסגרת מלאה ורציפה מסביב, עם חור רק במקום של כל צורה. כך המרווחים בין החלקים משתנים, והחוקיות של התבנית נשמרת.') : null,
+    motif ? chips('צורה', 'tess.motif', MOTIFS.filter(x => !x[2] || quadOK)) : null,
+    motif && !quadOK && mi[2] ? el('p', { class: 'hint' }, 'רבע עיגול, חצאי עיגול, עלה ומשולש יושבים בתאים בעלי ארבע פינות: ריבועים, לבנים, קליעה או קוביות. ברשת הזו מוצג עיגול.') : null,
+    motif && quadMotif ? chips('סידור', 'tess.arr', ARRS) : null,
+    motif && quadMotif && t.arr !== 'random' ? slider('כיוון', 'סיבוב הצורה ברבעי סיבוב', 'tess.orient', 0, 3, 1, '') : null,
+    motif && (quadMotif && t.arr === 'random' || t.vary === 'random') ? el('div', { class: 'btn-row' }, el('button', { class: 'btn small', onclick: () => { t.seed = (t.seed || 1) + 1; commit(); schedule(); } }, 'ערבב מחדש')) : null,
+    motif ? slider('גודל הצורה בתא', '1 = ממלאת את התא', 'tess.inner', 0.4, 1, 0.01, '') : null,
+    motif ? chips('גודל הצורות לאורך הפאנל', 'tess.vary', VARY) : null,
+    motif && t.vary !== 'none' ? slider('עוצמה', 'כמה קטנות הצורות הקטנות ביותר', 'tess.varyAmt', 0, 0.9, 0.05, '') : null,
+    motif && ['wave', 'ripple'].includes(t.vary) ? slider('תדירות', '', 'tess.varyFreq', 0.5, 6, 0.1, '') : null,
+    motif && ['linear', 'wave'].includes(t.vary) ? slider('כיוון', '', 'tess.varyAngle', -180, 180, 1, '°') : null,
+
+    el('div', { class: 'field-label' }, 'שינוי גודל לאורך הפאנל'),
+    el('p', { class: 'hint' }, 'התאים גדלים ומתכווצים בהדרגה, והרשת נשארת רציפה. כך נוצרת תנועה בתוך התבנית רק מהגדלה וכיווץ.'),
+    chips('', 'tess.mod.type', modList),
+    md.type !== 'none' ? slider(md.type === 'radial' || md.type === 'linear' ? 'יחס גודל' : 'עוצמה', md.type === 'radial' ? 'חיובי = גדלים לכיוון השוליים, שלילי = גדולים במרכז' : md.type === 'linear' ? 'חיובי = גדלים לכיוון החץ, שלילי = קטנים' : 'כמה גדולים הגדולים לעומת הקטנים', 'tess.mod.amount', -1, 1, 0.05, '') : null,
+    ['wave', 'ripple'].includes(md.type) ? slider('מספר גלים', '', 'tess.mod.freq', 0.5, 6, 0.1, '') : null,
+    ['linear', 'wave'].includes(md.type) ? slider('כיוון', '', 'tess.mod.angle', -180, 180, 1, '°') : null,
+    md.type === 'wave' ? chips('', 'tess.mod.both', [[false, 'בכיוון אחד'], [true, 'בשני הכיוונים']]) : null,
+    radialMods.includes(md.type) && t.type !== 'radial' ? slider('מרכז: אופקי', '', 'tess.mod.cx', -s.shape.w / 2, s.shape.w / 2, 1, 'מ"מ') : null,
+    radialMods.includes(md.type) && t.type !== 'radial' ? slider('מרכז: אנכי', '', 'tess.mod.cy', -s.shape.h / 2, s.shape.h / 2, 1, 'מ"מ') : null,
+
+    t.type !== 'radial' ? el('div', { class: 'field-label' }, 'גליות') : null,
+    t.type !== 'radial' ? slider('גובה הגל', '0 = קווים ישרים', 'tess.warp.amp', 0, 40, 0.5, 'מ"מ') : null,
+    t.type !== 'radial' && wp.amp > 0 ? slider('אורך הגל', '', 'tess.warp.len', 40, 600, 5, 'מ"מ') : null,
+    t.type !== 'radial' && wp.amp > 0 ? slider('כיוון', '', 'tess.warp.angle', -180, 180, 1, '°') : null,
+    t.type !== 'radial' && wp.amp > 0 ? chips('', 'tess.warp.both', [[false, 'גלים בכיוון אחד'], [true, 'גלים בשני הכיוונים']]) : null,
+
+    slider('תא קטן מינימלי', 'חלק מתא שנחתך בשוליים, קטן מזה נשאר סגור במסגרת', 'tess.minFrac', 0.1, 0.8, 0.05, ''),
+    el('div', { class: 'field-label' }, 'שמירת התבנית'),
+    el('p', { class: 'hint' }, 'התבנית נשמרת תמיד בתוך העיצוב (וגם ב-design.json שבערכת ההדפסה). כאן אפשר לשמור אותה גם כתבנית בסיס משלך, כדי להחיל אותה על עיצובים אחרים.'),
+    savePatternRow()
   ]));
 
   // 3 surface
@@ -205,9 +333,9 @@ function renderPanel() {
   panel.append(section('frame', 6, 'מסגרת והתאמה', `עובי ${fr.t} · מרווח ${fr.clr} מ"מ`, [
     el('p', { class: 'hint' }, 'הלוח שנתלה על הקיר. כל חלק ננעץ בתא שלו. כדאי להתחיל ב"בדיקת התאמה" כדי לכייל את המרווח למדפסת שלך. ברירת המחדל למרווח הנעיצה היא 0.07 מ"מ ולמרווח בחבקים שבין האריחים 0.1 מ"מ, לפי בדיקות ההדפסה על ה-MK4.'),
     slider('עובי המסגרת', '', 'frame.t', 2, 6, 0.2, 'מ"מ'),
-    slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 6, 0.1, 'מ"מ'),
+    slider('רוחב צלע', 'בין התאים', 'frame.rib', 1.6, 12, 0.1, 'מ"מ'),
     slider('מרווח התאמה', 'לכל צד, נעיצה · ברירת מחדל 0.07', 'frame.clr', 0, 0.5, 0.01, 'מ"מ'),
-    slider('רווח בין חלקים', '', 'frame.gap', 0.1, 2, 0.05, 'מ"מ'),
+    slider('רווח בין חלקים', 'גם ב"תבנית - דוגמה"', 'frame.gap', 0.1, 12, 0.05, 'מ"מ'),
     chips('המסגרת ההיקפית', 'frame.hideRim', [[false, 'בולטת'], [true, 'מוסתרת בתוך החלקים']]),
     el('p', { class: 'hint' }, fr.hideRim
       ? 'החלקים שבשולי הפאנל נמשכים עד הקצה ויורדים עד הקיר, כך שהם מכסים את הפס ההיקפי של המסגרת ונראה כאילו הם יוצאים מתוך הקיר. הפאה החיצונית המשופעת של כל חלק כזה ממשיכה באותו מישור כלפי הקיר, ונחתכת בקו היקפי אחיד אחד: הקו שבו מסתיים השיפוע הקצר ביותר. משם החלק יורד ישר לקיר, כך שקצה הפאנל נשאר קו רציף ונקי. מתחת לחלק יש מדף שטוח שנח על הפס. הפס עצמו צר כמו צלע בין תאים.'
