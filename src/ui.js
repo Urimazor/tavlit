@@ -20,7 +20,7 @@ function normalize(s) {
   s.move.points = (s.move.points || []).map(p => Object.assign({ type: 'vortex', x: 0, y: 0, strength: 1, radius: 80, fade: 120, opening: 0, angle: 0, curve: 0, spiral: 0 }, p));
   s.piece = Object.assign({ curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0 }, s.piece || {});
   if (s.piece.cutOn === undefined) s.piece.cutOn = s.piece.cutTilt > 0;   // designs saved before the switch keep their look
-  s.frame = Object.assign({ jointClr: 0.2, clampEvery: 40, clampLen: 6, clampClr: 0.1 }, s.frame);
+  s.frame = Object.assign({ jointClr: 0.2, clampEvery: 40, clampLen: 6, clampClr: 0.1, seamMul: 2 }, s.frame);   // seamMul: Uri's prints (2026-11-08), seam ribs too thin
   delete s.frame.joint; delete s.frame.knobW;   // dovetails gave way to separate clamps (2026-11-06)
   // Uri's fit test on the MK4 (2026-11-02): 0.05 mm fits best; move designs still on the old 0.15 default
   if (!s.fitCal) { if (s.frame.clr === 0.15) s.frame.clr = 0.05; s.fitCal = 1; }
@@ -342,6 +342,7 @@ function renderPanel() {
       : 'המסגרת ההיקפית בולטת סביב הפאנל, ורוחבה נקבע ב"שוליים" בחלק "גודל וצורה". אפשר להסתיר אותה בתוך החלקים שבשוליים.'),
     el('div', { class: 'field-label' }, 'חיבור בין אריחים'),
     el('p', { class: 'hint' }, 'המסגרת מתחלקת לאורך גבולות של תאים שלמים. אריחים שכנים מוחזקים יחד בחבקים: חלקים קטנים בצורת ח שמודפסים בנפרד. בכל חבק יש בצלע מגרעת מלמעלה, שבה יושב גג החבק, ומגרעת בכל צד, שבה יורדות הרגליים ולוחצות את שני האריחים זה אל זה. החלקים שליד החבק מקבלים מגרעת קטנה בצוואר, כך שהחבק נסתר מתחתם. אין צורך לדחוס חלקים זה לתוך זה, והאריחים לא מתעקמים.'),
+    slider('עובי צלע בחיבור', 'פי כמה מצלע רגילה · ×1 = כל אריח מקבל חצי צלע · ×2 = צלע מלאה לכל אריח (ברירת מחדל). הרווח בין החלקים לא משתנה', 'frame.seamMul', 1, 3, 0.1, '×'),
     slider('מרחק בין חבקים', 'קטן יותר = יותר חבקים בכל חיבור', 'frame.clampEvery', 15, 120, 5, 'מ"מ'),
     slider('אורך חבק', 'לאורך החיבור', 'frame.clampLen', 4, 12, 0.5, 'מ"מ'),
     slider('מרווח בחבק', 'לכל צד · ברירת מחדל 0.1 · גדול יותר = רופף יותר', 'frame.clampClr', 0, 0.4, 0.01, 'מ"מ'),
