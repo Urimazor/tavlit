@@ -1,7 +1,7 @@
 /* Ready-made designs + filament palette */
 (function (root) {
   const PRINT = { bedW: 250, bedH: 210, bedZ: 220, margin: 5, spacing: 3, overhang: 50 };
-  const FRAME = { t: 3, rib: 2.4, clr: 0.07, gap: 0.4, color: '#85898c', jointClr: 0.2, clampEvery: 40, clampLen: 6, clampClr: 0.1, hang: { on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 } };
+  const FRAME = { t: 3, rib: 2.4, clr: 0.07, gap: 0.4, color: '#85898c', jointClr: 0.2, clampEvery: 40, clampLen: 6, clampClr: 0.1, seamMul: 2, hang: { on: true, head: 8.5, shank: 4.5, headH: 3, slot: 9 } };
   const PIECE = { curve: 0, twist: 0, spiral: 0, profile: 1, layers: 10, smooth: 0, truncate: 0, dome: 0, cutTilt: 0, cutBy: 'field', cutAngle: 0, cutVary: 0, cutOn: false };
   // pattern settings beyond the lattice (section 2, "תבנית - דוגמה"); see tessellate() in engine.js
   const TESS = { rot: 0, ratio: 2, fill: 'full', motif: 'quarter', arr: 'random', orient: 0, inner: 0.92, vary: 'none', varyAmt: 0.5, varyFreq: 2, varyAngle: 0,

@@ -220,13 +220,14 @@
     const ring = p => p.concat([p[0]]);
     const PCl = root.polygonClipping;
     const S = E.clampSpec(fr), jc = S.jc;
-    // the seam between cell 3 and 4 is held by a clamp, exactly like the real frame: the normal rib, widened into a
+    // the seam between cell 3 and 4 is held by a clamp, exactly like the real frame: the seam rib, widened into a
     // short core under the clamp, with slots for its legs; the two pieces beside it get a notch for the legs
     const xs = -W / 2 + rim + 3 * cs;
     const left = [[-W / 2, -H / 2], [xs - jc / 2, -H / 2], [xs - jc / 2, H / 2], [-W / 2, H / 2]], right = [[xs + jc / 2, -H / 2], [W / 2, -H / 2], [W / 2, H / 2], [xs + jc / 2, H / 2]];
     const parts = cells.map((c, i) => {
-      const X = { poly: c, opening: E.inset(c, half), collar: E.inset(E.inset(c, half), clrs[i]), body: E.inset(c, fr.gap / 2) };
-      // cell 3's right edge (index 1) and cell 4's left edge (index 3)
+      // cell 3's right edge (index 1) and cell 4's left edge (index 3) are on the seam: the wider seam rib there
+      const sh = E.seamHalfOf(fr), ds = i === 2 ? [half, sh, half, half] : i === 3 ? [half, half, half, sh] : half;
+      const op = E.inset(c, ds), X = { poly: c, opening: op, collar: E.inset(op, clrs[i]), body: E.inset(c, fr.gap / 2) };
       const nt = i === 2 ? { o: c[1], uk: [0, 1], nIn: [-1, 0] } : i === 3 ? { o: c[3], uk: [0, -1], nIn: [1, 0] } : null;
       if (!nt) return X;
       Object.assign(nt, { s1: cs / 2 - S.Lc / 2, s2: cs / 2 + S.Lc / 2, D: S.cg, Dc: S.cD });

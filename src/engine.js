@@ -740,6 +740,11 @@
     }
     const minFrac = st.tess.minFrac ?? 0.35;
     const t = fr.t, half = fr.rib / 2, clr = fr.clr, gap = fr.gap;
+    // a rib on a tile seam is shared by the two tiles. With the normal rib each tile kept only half of it (less the
+    // seam gap), about 1 mm: too thin to print strong. There each side of the seam gets seamHalf instead (by default
+    // a whole normal rib per tile); the visible gap between the pieces stays the same, only their collars get smaller.
+    // Shapes in cells (motif) keep the normal rib: their seams run through the background frame between the shapes
+    const seamHalf = tz.motif ? half : seamHalfOf(fr);
     const bevel = Math.max(0.6, half + clr - gap / 2);   // 45°: rise = the step from the opening to the visible body
     let maxExt = 0;
     // distance from a point to the inner edge of the outer frame
@@ -812,12 +817,16 @@
     };
     // outline -> opening in the frame, press-fit collar and visible base of the piece
     function shapeCell(c, orig, concave) {
-      for (let attempt = 0; attempt < 5; attempt++) {
-        if (attempt) { c.poly = simplify(orig, minEdge * (1 + attempt * 1.2), pointRank); c.seam = seamFlags(c); }
+      // first with the wide seam rib, then (a cell too small for it) with the normal rib on its seam edges too
+      for (let k = 0; k < (seamHalf > half ? 10 : 5); k++) {
+        const attempt = k % 5, wide = k < 5;
+        if (k) { c.poly = attempt ? simplify(orig, minEdge * (1 + attempt * 1.2), pointRank) : orig; c.seam = seamFlags(c); }
         if (c.poly.length < 3) return false;
-        // every edge, tile seams too, gets the normal rib: the visible gap stays the same all over the panel.
-        // Only where a dovetail sits does the frame widen, locally, into a notch in the collars on both sides (cutNotch)
-        const ds = half;
+        // every edge gets the normal rib, a tile seam the wider seam rib (seamHalf on each side); the pieces' bodies
+        // stay gap/2 off every edge, so the visible gap is the same all over the panel. Where a clamp sits the frame
+        // widens further, locally, into a notch in the collars on both sides (notchCut). A cell too small for the
+        // wider seam rib keeps the normal one rather than turning into a blank
+        const ds = wide && seamHalf > half && c.seam && c.seam.length === c.poly.length ? c.seam.map(o => o ? seamHalf : half) : half;
         const opening = inset(c.poly, ds, concave);
         const collar = opening && inset(opening, clr, concave);
         let bodyDs = gap / 2, outEdge = null;
@@ -1122,7 +1131,7 @@
     // The frame keeps the nominal size; all the play is taken off the clamp (fr.clampClr), so only the clamp
     // changes when the printer needs more or less room.
     const clamps = [];
-    const jc = fr.jointClr ?? 0.2, CS = clampSpec(fr);
+    const jc = fr.jointClr ?? 0.2, CS = clampSpec(fr, !!tz.motif);
     const { Lc, cD } = CS, cMargin = 1.0;
     const cellIdx = new Map(cells.map((c, i) => [c, i]));
     const openList = pieces.map(c => ({ c, ring: [q3(c.opening).concat([q3(c.opening)[0]])], bb: bbox(c.opening) }));
@@ -1153,6 +1162,13 @@
     // (the frame fills it out to D; the piece's collar makes room out to Dc, for the clamp's leg)
     // far: X is a shape a little way from the seam (shapes in cells); its nearest straight side parallel to the
     // seam takes the notch, shallower by the distance to the seam
+    // how far X's opening stands back from its edge k (half, or seamHalf on a seam edge)
+    const ribOn = (X, k) => {
+      const P = X.poly, O = X.opening;
+      if (!O || O.length !== P.length) return half;
+      const a = P[k], b = P[(k + 1) % P.length], L = Math.hypot(b[0] - a[0], b[1] - a[1]) || 1;
+      return Math.abs((O[k][0] - a[0]) * (b[1] - a[1]) - (O[k][1] - a[1]) * (b[0] - a[0])) / L;
+    };
     const notchFor = (X, m, u, D, W, Dc, far) => {
       if (X.kind !== 'piece' || !X.opening || X.mount) return null;
       if (D <= half + 0.05) return null;
@@ -1169,6 +1185,8 @@
         bestD = d; k = i;
       }
       if (k < 0) return false;
+      // the rib this edge already has (the seam rib on a seam edge; it may have fallen back to the normal one)
+      if (!far && D <= ribOn(X, k) + 0.05) return null;
       if (far) { D -= bestD; Dc = (Dc ?? D + bestD) - bestD; if (D <= half + 0.05) return null; }
       const a = P[k], b = P[(k + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]), uk = [(b[0] - a[0]) / L, (b[1] - a[1]) / L], nIn = [-uk[1], uk[0]];
       const sm = (m[0] - a[0]) * uk[0] + (m[1] - a[1]) * uk[1];
@@ -1232,7 +1250,9 @@
       for (const { c, o, a, b, L } of list) {
         acc += L / every;
         // a long edge can take more than one clamp, each in its own share of the edge
-        const k = Math.min(Math.floor(acc), Math.floor(L / (Lc + 2 * cD + 4)));
+        // (one clamp is always tried: tryPlace checks that it has room; the wider seam rib made cD larger, and
+        // a short edge used to be skipped outright)
+        const k = Math.min(Math.floor(acc), Math.max(1, Math.floor(L / (Lc + 2 * cD + 4))));
         if (k < 1) continue;
         let put = 0;
         for (let j = 0; j < k; j++) {
@@ -1746,7 +1766,18 @@
       if (Math.max(g(E2[0], p), g(E2[1], p)) <= 1e-6) continue;
       any = true;
       let h = null;
-      for (let k = 1; k <= Ls.length; k++) {
+      // first choice: straight up from the body's corner, to where the slope reaches it. The piece keeps its full
+      // width there, so the visible gap beside a wide rib (a tile seam) stays as thin as everywhere else; only the
+      // groove under that gap gets deeper. Following the column instead would pull the corner in along the
+      // piece's taper and open the gap. Layers below that height collapse onto it, as below.
+      {
+        let need = 0;
+        for (const e of E2) { const q = N[e]; if (q) need = Math.max(need, (q[0] * p[0] + q[1] * p[1] - q[2]) / bv.tan); }
+        const zh = bv.t + need, hv = [p[0], p[1], Math.max(p[2], zh)];
+        let k = 1; while (k <= Ls.length && pt(k, i)[2] <= hv[2] + 1e-6) k++;
+        if (k <= Ls.length) { const q = pt(k, i); if (Math.max(g(E2[0], q), g(E2[1], q)) <= 0) h = { p: hv, k }; }
+      }
+      for (let k = 1; !h && k <= Ls.length; k++) {
         const q = pt(k, i);
         if (Math.max(g(E2[0], q), g(E2[1], q)) <= 0) {
           let s = 0;   // both limits are linear along the segment: the point where the last one is met
@@ -2211,8 +2242,14 @@
   // Sizes in the frame of a seam: n across the seam (0 on the seam), u along it, z up from the wall. The frame
   // gets the nominal shape (core |n| <= cg, slots out to cD, core top at zr); the clamp is smaller by clampClr
   // on every face that meets the frame, so the printing play is set on the clamp alone.
-  function clampSpec(fr) {
-    const t = fr.t, half = fr.rib / 2, jc = fr.jointClr ?? 0.2, cc = Math.max(0, fr.clampClr ?? 0.1);
+  // half the width of a rib on a tile seam: each tile keeps this much from the seam line (less half the seam gap).
+  // frame.seamMul = seam rib / normal rib; 1 = the old seam (each tile half a normal rib), 2 = a whole rib per tile
+  function seamHalfOf(fr) { return fr.rib / 2 * Math.max(1, fr.seamMul ?? 2); }
+  // The clamp grows with the seam rib: its core is a little wider than the rib on both sides. With shapes in cells
+  // (motif) the seams run through the solid background between the shapes, so there the clamp keeps the size it
+  // had with the normal rib (a bigger one finds no room between the shapes)
+  function clampSpec(fr, motif) {
+    const t = fr.t, half = motif ? fr.rib / 2 : seamHalfOf(fr), jc = fr.jointClr ?? 0.2, cc = Math.max(0, fr.clampClr ?? 0.1);
     const Lc = Math.max(3, fr.clampLen ?? 6);
     const cg = Math.max(half + 0.4, 2.0), lt = 1.6, cD = cg + lt;   // core half-width, leg, outer face of the slot
     const rT = Math.min(1.4, t * 0.45), zr = t - rT;              // roof thickness, top of the core under the roof
@@ -2359,6 +2396,6 @@
     makeShape, tessellate, surfaceAt, fieldAt, modsAt, build, setApex, subdivide, convexHull,
     Mesh, pieceMesh, tileMesh, placeLabel, textGlyphs, prism, annulus, meshVolume, checkManifold,
     packPlates, extrudeGeom, stlBinary, model3mf, CONTENT_TYPES, RELS, localize, esc, collarColumn, notchCut,
-    clampSpec, clampProfile, clampMesh, clampPlaced
+    clampSpec, seamHalfOf, clampProfile, clampMesh, clampPlaced
   };
 })(typeof window !== 'undefined' ? window : globalThis);
