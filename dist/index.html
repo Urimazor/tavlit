@@ -1796,6 +1796,7 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
           }
           return best;
         };
+        const zAll = [];
         info.forEach(({ c, out, reach }) => {
           const B = c.body, shift = shiftFor(B, out), zt = c.z0 - 0.01;
           const Bn = shift(reach.map(r => r === null ? dmin : Math.max(r, dmin))), Bc = shift(out.map(() => dmin)), Ci = shift(out.map(() => -0.3));
@@ -1808,12 +1809,22 @@ dialog.ask p { margin: 0 0 16px; font-size: 14px; line-height: 1.5; color: var(-
             if (hit !== null && hit < L + 3 * c.z0) { Bc[i] = [v[0] + ux / L * hit, v[1] + uy / L * hit]; }
           });
           if (Bc.some((q, i) => Math.hypot(q[0] - B[i][0], q[1] - B[i][1]) > 6 * c.z0)) return;   // a very sharp corner: keep the plain skirt
-          // height where each vertex's sloped edge meets the line; below it the piece drops upright to the wall
+          // height where each vertex's sloped edge would meet the line (each face in its own plane)
           const zc = B.map((v, i) => { const ln = Math.hypot(Bn[i][0] - v[0], Bn[i][1] - v[1]), lc = Math.hypot(Bc[i][0] - v[0], Bc[i][1] - v[1]); return ln < 1e-6 ? 0.2 : Math.min(zt - 0.2, Math.max(0.2, zt * (1 - lc / ln))); });
           c.flare = { out, B: Bc, C: Ci, zc };
+          zAll.push(...zc.filter((z, i) => out[i] || out[(i - 1 + out.length) % out.length]));
           for (const q of Bc) { if (q[0] < c.fp.x0) c.fp.x0 = q[0]; if (q[0] > c.fp.x1) c.fp.x1 = q[0]; if (q[1] < c.fp.y0) c.fp.y0 = q[1]; if (q[1] > c.fp.y1) c.fp.y1 = q[1]; }
           c.fp.w = c.fp.x1 - c.fp.x0; c.fp.h = c.fp.y1 - c.fp.y0;
         });
+        // one band all round the panel: every edge piece drops upright from the line at the same height (the median of
+        // the heights its own faces would give) and slopes from there straight up to the body's base. With each face
+        // in its own plane the upright drop was 0.2-3.9 mm tall from piece to piece, so the edge showed a step at
+        // every gap between two pieces
+        if (zAll.length) {
+          zAll.sort((a, b) => a - b);
+          const zE = zAll[Math.floor(zAll.length / 2)];
+          pieces.forEach(c => { if (c.flare) c.flare.zc = c.flare.zc.map(() => Math.min(c.z0 - 0.21, zE)); });
+        }
       }
     }
     const shortened = pieces.filter(c => c.scale < 0.999).length;
