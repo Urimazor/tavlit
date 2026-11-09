@@ -43,6 +43,8 @@ const map = [
   await page.selectOption('#presetSel', 'swirl'); await page.waitForTimeout(600);
   const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#kitBtn').then(() => page.click('dialog.ask .ask-btns button:nth-child(2)'))]);
   await dl.saveAs(OUT + 'ui-kit.zip'); console.log('kit downloaded', dl.suggestedFilename(), fs.statSync(OUT + 'ui-kit.zip').size);
+  { const kz = await require('jszip').loadAsync(fs.readFileSync(OUT + 'ui-kit.zip')), ff = Object.keys(kz.files).filter(f => f.startsWith('ערכת בדיקת התאמה/') && !kz.files[f].dir);
+    console.log('kit fit test folder:', ff.join(', ')); if (!ff.some(f => f.endsWith('.3mf'))) errors.push('kit misses its fit test folder'); }
   const [dl2] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#fitBtn')]);
   console.log('fit downloaded', dl2.suggestedFilename());
   // load a downloaded fit test zip back: its design.json restores the design

@@ -24,6 +24,11 @@ function stlOpenEdges(buf) {
   if (m.clamps.length && !cf.length) { console.log('no clamp files'); process.exit(1); }
   for (const f of cf) { const e = stlOpenEdges(await kz.file(f).async('nodebuffer')); console.log(f, 'open edges', e); if (e) process.exit(1); }
   const rd = await kz.file('README.txt').async('string'); if (m.clamps.length && !rd.includes('חבק')) { console.log('README misses clamps'); process.exit(1); }
+  const fdir = WallKit.FIT_DIR + '/', ff = Object.keys(kz.files).filter(f => f.startsWith(fdir) && !kz.files[f].dir);
+  console.log('fit test folder', ff.length, 'files', r.summary.fit);
+  if (!ff.some(f => f.endsWith('.3mf')) || !ff.some(f => f.endsWith('.stl')) || !kz.file(fdir + 'README.txt') || !kz.file(fdir + 'design.json')) { console.log('kit misses its fit test folder'); process.exit(1); }
+  for (const f of ff.filter(f => f.endsWith('.stl'))) { const e = stlOpenEdges(await kz.file(f).async('nodebuffer')); if (e) { console.log(f, 'open edges', e); process.exit(1); } }
+  if (!rd.includes(WallKit.FIT_DIR)) { console.log('README misses the fit test folder'); process.exit(1); }
   const b = await WallKit.buildFitTest(st, JSZip);
   const fz = await JSZip.loadAsync(Buffer.from(await b.arrayBuffer()));
   for (const [nm, zz] of [['kit', kz], ['fit test', fz]]) {
