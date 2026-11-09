@@ -12,10 +12,11 @@ const base = {
  print:{bedW:250,bedH:210,bedZ:220,margin:5,spacing:3,overhang:45}
 };
 const variants = [];
+const HR = !!process.env.HR;
 for (const st of ['rect','circle','ellipse','hexagon','octagon']) for (const tt of ['hex','square','triangle','radial','voronoi','sunflower']) for (const sf of ['dome','ring','wave','noise']) {
   const s = JSON.parse(JSON.stringify(base)); s.shape.type=st; s.tess.type=tt; s.surface.type=sf;
   if (st!=='rect'){s.shape.w=400;s.shape.h=320;}
-  s.tess.size = 30;
+  s.tess.size = 30; if (HR) s.frame.hideRim = true;
   variants.push(s);
 }
 let fails=0, total=0;
