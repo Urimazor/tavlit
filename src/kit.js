@@ -80,6 +80,7 @@
   }
 
   // every kit carries the design it was made from, in the same format as "save design", so it can be loaded back
+  const FIT_DIR = 'ערכת בדיקת התאמה';
   function addDesign(zip, st) { zip.file('design.json', JSON.stringify(st, null, 2)); }
 
   async function buildKit(model, st, JSZip, opts = {}) {
@@ -160,6 +161,17 @@
         am.file(`a4-row${j + 1}-col${i + 1}.svg`, assemblySVG(model, st, win, `A4 ${j + 1}/${ny} - ${i + 1}/${nx}`));
       }
     }
+    // the fit test for this very kit, in its own folder: a real seam stretch of this frame when it can be cut,
+    // the square strip otherwise. Built into a scratch zip first so a failed attempt leaves nothing behind.
+    const fst = JSON.parse(JSON.stringify(st)); if (fst.frame.hang) fst.frame.hang.on = false;
+    let fz = null;
+    try { const t = new JSZip(), r = await buildShapeFitTest(opts.fitModel || model, fst, JSZip, t); if (r) { fz = t; summary.fit = r.section; } } catch (e) { console.error(e); }
+    if (!fz) { try { fz = await buildFitTest(fst, JSZip, new JSZip()); summary.fit = { strip: true }; } catch (e) { console.error(e); } }
+    if (fz) {
+      const fd = zip.folder(FIT_DIR);
+      for (const [nm, f] of Object.entries(fz.files)) if (!f.dir) fd.file(nm, await f.async('uint8array'));
+      addDesign(fd, st);   // the kit's own design (hang holes included), same as the one at the top
+    }
     addDesign(zip, st);
     zip.file('README.txt', readme(model, st, summary, nx * ny));
     return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), summary };
@@ -182,7 +194,10 @@
     L.push(`גודל: ${st.shape.w}×${st.shape.h} מ"מ · ${model.pieces.length} חלקים · ${st.color.bands.length} צבעים · ${model.tiles.length} אריחי מסגרת`);
     L.push('');
     L.push('סדר עבודה מומלץ (Prusa MK4, PLA):');
-    L.push('1. קודם כול הדפס חלק אחד ואריח מסגרת אחד ובדוק שהחלק ננעץ בחוזקה. אם רופף, הקטן את "מרווח התאמה"; אם לא נכנס, הגדל.');
+    if (sm.fit) {
+      L.push(`1. קודם כול הדפס את תיקיית "${FIT_DIR}": בדיקת ההתאמה של הערכה הזו בדיוק, ` + (sm.fit.strip ? 'רצועה קטנה של תאים וחלקים במרווחים שונים.' : `קטע אמיתי מהמסגרת (התפר בין אריח ${sm.fit.tiles[0]} לאריח ${sm.fit.tiles[1]}, ${sm.fit.clamps} חבקים ו-${sm.fit.pieces} חלקים).`) + ' ההוראות בקובץ README שבתוכה.');
+      L.push('   אם המרווח שנבחר בבדיקה שונה מההגדרה הנוכחית, עדכן אותו באפליקציה והורד את הערכה מחדש. אחרת אפשר להמשיך להדפיס את כל השאר.');
+    } else L.push('1. קודם כול הדפס חלק אחד ואריח מסגרת אחד ובדוק שהחלק ננעץ בחוזקה. אם רופף, הקטן את "מרווח התאמה"; אם לא נכנס, הגדל.');
     L.push('2. תיקיית frame: כל אריח הוא פלטה אחת. פתח את קובץ ה-3MF ב-PrusaSlicer. גובה שכבה 0.2, 2 דפנות, מילוי 15%.');
     L.push('3. תיקיית pieces: תיקייה לכל צבע, ובה פלטות מוכנות. החלף גליל לפני כל צבע. הגדרות: 0.2 מ"מ, 2 דפנות, מילוי 10%-15%, בלי תמיכות.');
     L.push('   לכל פלטה יש קובץ plate-XX-map.svg שמראה איזה מספר נמצא איפה על המשטח. ' + (st.print.engrave !== false ? 'בנוסף, המספר של כל חלק שקוע בתחתית שלו (0.4 מ"מ, הפוך כמו בראי כשמסתכלים מלמעלה, וקריא כשהופכים את החלק). חלקים קטנים מאוד נשארים בלי מספר.' : 'מומלץ להוריד חלקים מהמשטח לפי המפה ולסמן מספר בעיפרון בתחתית.'));
@@ -207,7 +222,7 @@
 
   // small strip to dial in press-fit clearance: 5 square cells, 5 pieces with growing clearance.
   // The taller the piece, the looser it is, so they can be told apart without labels.
-  async function buildFitTest(st, JSZip) {
+  async function buildFitTest(st, JSZip, into) {
     const fr = st.frame, pr = st.print, half = fr.rib / 2;
     const cs = 24, n = 5, rim = 5;
     const clrs = [0.03, 0.05, 0.07, 0.10, 0.15]; // around the 0.07 mm default (0.05 fit best on the first MK4 test)
@@ -260,12 +275,12 @@
       merged.append(m, x, y, 0);
       lines.push(`חלק ${i + 1} (גובה ${(pc.zApex).toFixed(0)} מ"מ): מרווח ${clr.toFixed(2)} מ"מ לכל צד`);
     });
-    const zip = new JSZip();
+    const zip = into || new JSZip();
     zip.file('fit-test.3mf', await zip3mf(JSZip, objs, fr.color || '#85898c'));
     zip.file('fit-test.stl', E.stlBinary(merged, 'fit test'));
     addDesign(zip, st);
     zip.file('README.txt', ['בדיקת התאמה ל-MK4', '', 'הדפס את הקובץ (פלטה אחת, בלי תמיכות), ונסה לנעוץ כל חלק בתא שלו.', 'בחר את החלק הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו באפליקציה תחת "מרווח התאמה".', 'המסגרת מודפסת בשני חלקים, ויש איתה חמישה חבקים כמו אלה שמחזיקים את האריחים האמיתיים. הצמד את שני החלקים ולחץ חבק לתוך המגרעת שבחיבור, מלמעלה.', 'בחר את החבק הראשון שנכנס בלחיצת אצבע, יושב בגובה המסגרת ומחזיק את שני החלקים צמודים, והזן את המרווח שלו באפליקציה תחת "מרווח בחבק". את החבקים סופרים לפי החריצים הקטנים בגג.', '', ...lines, '', ...clLines, '', 'design.json: העיצוב שממנו נוצרה הבדיקה. אפשר לטעון אותו בחזרה באפליקציה ("טען עיצוב") ולהמשיך לערוך.'].join('\r\n'));
-    return zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
+    return into ? zip : zip.generateAsync({ type: 'blob', compression: 'DEFLATE' });
   }
 
   // ---------- fit test cut out of the design itself ----------
@@ -331,7 +346,7 @@
     return { geom, slabs };
   }
 
-  async function buildShapeFitTest(model, st, JSZip) {
+  async function buildShapeFitTest(model, st, JSZip, into) {
     const fr = st.frame, pr = st.print, half = fr.rib / 2, PC = root.polygonClipping;
     // a panel printed as one tile has no seam: build it again for a smaller bed so it splits, and take the seam
     // from there (same cells, same clamps the panel would get if it were split)
@@ -416,7 +431,7 @@
     sec.clamps.forEach((k, i) => { addClamp(S.cc, 0, `fit-clamp-current-${i + 1}`); placed.push({ kind: 'clamp', mesh: E.clampPlaced(k, S) }); });
     [0, 0.05, 0.10, 0.15, 0.20].forEach((cc, i) => { addClamp(cc, i + 1, `fit-clamp-${cc.toFixed(2)}mm`); clLines.push(`חבק עם ${i + 1} חריצים בגג: מרווח ${cc.toFixed(2)} מ"מ לכל צד`); });
     const plates = E.packPlates(items, Object.assign({}, pr, { spacing: Math.max(pr.spacing, 4) }));
-    const zip = new JSZip();
+    const zip = into || new JSZip();
     for (let p = 0; p < plates.length; p++) {
       const o = [], merged = new E.Mesh();
       plates[p].items.forEach(it => { const m = it.rot ? E.localize(it.ref.mesh, true) : it.ref.mesh; o.push({ name: it.ref.name, mesh: m, x: it.x, y: it.y }); merged.append(m, it.x, it.y, 0); });
@@ -436,7 +451,7 @@
       'אחר כך נעץ כל חלק בתא שלו (המספר שקוע בתחתית החלק ותואם את המפה). כל חלק מודפס במרווח אחר; בחר את הראשון שנכנס ביד בלחיצה ונשאר תפוס כשהופכים את המסגרת, והזן את המרווח שלו תחת "מרווח התאמה".',
       'החלקים שליד חבק בודקים גם את המגרעת לרגל החבק: הם צריכים להיכנס כשהחבק כבר במקום.', '',
       ...lines, '', ...clLines, '', 'design.json: העיצוב שממנו נוצרה הבדיקה. אפשר לטעון אותו בחזרה באפליקציה ("טען עיצוב") ולהמשיך לערוך.'].join('\r\n'));
-    return { blob: await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), section: { tiles: [tA.label, tB.label], clamps: sec.clamps.length, pieces: pcs.length, plates: plates.length, clearances: vals, virtual: virt }, placed };
+    return { blob: into ? null : await zip.generateAsync({ type: 'blob', compression: 'DEFLATE' }), section: { tiles: [tA.label, tB.label], clamps: sec.clamps.length, pieces: pcs.length, plates: plates.length, clearances: vals, virtual: virt }, placed };
   }
 
   // the whole panel with the test stretch picked out
@@ -448,5 +463,5 @@
     return svg.replace('</svg>', add.join('\n') + '\n</svg>');
   }
 
-  root.WallKit = { buildKit, buildFitTest, buildShapeFitTest, pickSection, assemblySVG, plateSVG, hull };
+  root.WallKit = { FIT_DIR, buildKit, buildFitTest, buildShapeFitTest, pickSection, assemblySVG, plateSVG, hull };
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -973,7 +973,7 @@ $('#kitBtn').addEventListener('click', async () => {
       if (hw.length) toast(hw.map(w => w.text).join(' '), 9000);
     }
     const names = st.color.bands.map(h => (PR.palette.find(p => p[1] === h.toLowerCase()) || [h.slice(1)])[0]);
-    const { blob } = await K.buildKit(km, st, window.JSZip, { colorNames: names.map(n => /^[0-9a-f]{6}$/i.test(n) ? n : n) });
+    const { blob } = await K.buildKit(km, st, window.JSZip, { colorNames: names.map(n => /^[0-9a-f]{6}$/i.test(n) ? n : n), fitModel: model });
     await offerFile('tavlit-print-kit.zip', blob);
   } catch (e) { console.error(e); toast('יצירת הערכה נכשלה: ' + e.message, 6000); }
   btn.innerHTML = old; btn.disabled = false;
