@@ -815,6 +815,71 @@
       }
       return out;
     };
+    // a cell with room for a collar of its own (else it stays frame or joins a neighbour)
+    const roomForPiece = o => { const op = inset(o.poly, half, true), co = op && inset(op, clr, true); return !!co && area(co) > 12; };
+    // hidden frame: an edge piece's body must end exactly on the panel's outline, or the band round the edge starts
+    // a little in or out from piece to piece and shows a step at every gap. A cell simplified across the region's
+    // corner leaves its outer edge slanting in (up to ~2 mm) or a corner sticking out. So each corner of the body on
+    // the panel's edge is put onto the outline: a corner between two outer edges at the nearest point of the outline,
+    // a corner where an outer edge meets a side edge slides along that side edge (the line it shares with its neighbour)
+    function snapToOutline(B, oe, lim = Infinity) {
+      const n = B.length, O = outer;
+      const nearest = q => { let best = q, bd = Infinity; for (let k = 0; k < O.length; k++) { const a = O[k], b = O[(k + 1) % O.length], ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1, t = Math.max(0, Math.min(1, ((q[0] - a[0]) * ex + (q[1] - a[1]) * ey) / l2)), p = [a[0] + ex * t, a[1] + ey * t], d = Math.hypot(q[0] - p[0], q[1] - p[1]); if (d < bd) { bd = d; best = p; } } return best; };
+      // where the line through p along u crosses the outline, nearest to p (signed distance along u)
+      const along = (p, u) => {
+        let best = null;
+        for (let k = 0; k < O.length; k++) {
+          const a = O[k], b = O[(k + 1) % O.length], ex = b[0] - a[0], ey = b[1] - a[1], den = u[0] * ey - u[1] * ex;
+          if (Math.abs(den) < 1e-12) continue;
+          const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den, w = ((a[0] - p[0]) * u[1] - (a[1] - p[1]) * u[0]) / den;
+          if (w >= -1e-9 && w <= 1 + 1e-9 && (best === null || Math.abs(t) < Math.abs(best))) best = t;
+        }
+        return best;
+      };
+      const res = B.map((v, i) => {
+        const pe = oe[(i - 1 + n) % n], ne = oe[i];
+        if (!pe && !ne) return v;
+        // a corner that would have to move further than the rail is wide is not on the panel's edge: leave it
+        const near = q => Math.hypot(q[0] - v[0], q[1] - v[1]) <= lim ? q : v;
+        if (pe && ne) return near(nearest(v));
+        const o = ne ? B[(i - 1 + n) % n] : B[(i + 1) % n], L = Math.hypot(v[0] - o[0], v[1] - o[1]);
+        if (L < 1e-9) return near(nearest(v));
+        const u = [(v[0] - o[0]) / L, (v[1] - o[1]) / L], t = along(v, u);
+        if (t === null || Math.abs(t) > Math.min(lim, 6) || t < -0.8 * L) return near(nearest(v));
+        const q = [v[0] + u[0] * t, v[1] + u[1] * t];
+        // the side edge meets the outline round a corner of the panel from the outer edge (the cell's corner sits on
+        // the region's corner): then the piece takes that corner of the panel, or the band would miss it
+        const w = ne ? B[(i + 1) % n] : B[(i - 1 + n) % n], segAt = p => { let best = -1, bd = Infinity; for (let k = 0; k < O.length; k++) { const a = O[k], b = O[(k + 1) % O.length], ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1, tt = Math.max(0, Math.min(1, ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / l2)), d = Math.hypot(p[0] - a[0] - ex * tt, p[1] - a[1] - ey * tt); if (d < bd - 1e-9) { bd = d; best = k; } } return best; };
+        const kq = segAt(q), kw = segAt([(v[0] + w[0]) / 2, (v[1] + w[1]) / 2]);
+        if (kq >= 0 && kw >= 0 && kq !== kw) {
+          const R = O.length, ci = (kq + 1) % R === kw ? kw : (kw + 1) % R === kq ? kq : -1;
+          if (ci >= 0) {
+            // a real corner of the outline (an outline made of many short edges turns only a little at each point)
+            const a = O[(ci - 1 + R) % R], cn = O[ci], b = O[(ci + 1) % R];
+            const t1 = Math.atan2(cn[1] - a[1], cn[0] - a[0]), t2 = Math.atan2(b[1] - cn[1], b[0] - cn[0]);
+            let turn = Math.abs(t2 - t1); if (turn > Math.PI) turn = 2 * Math.PI - turn;
+            if (turn > 0.35 && Math.hypot(cn[0] - q[0], cn[1] - q[1]) < 6) return cn.slice();
+          }
+        }
+        return q;
+      });
+      // a long move can fold the piece over itself: then only short moves are made
+      if (lim > 3.5 && !simpleCCW(res)) return snapToOutline(B, oe, 3.5);
+      return res;
+    }
+    // the skirt: the band of the body outside the outer rail, from the wall up to the body
+    function wrapOf(body) {
+      // the clipping library can trip on nearly touching edges: retry on a slightly shifted grid
+      for (const sh of [0, 0.0007, -0.0013]) {
+        try {
+          const rg = q => { const r = q.map(v => [Math.round((v[0] + sh) * 1000) / 1000, Math.round((v[1] - sh) * 1000) / 1000]); r.push(r[0]); return r; };
+          let g = root.polygonClipping.intersection([rg(body)], [rg(outer), rg(skirtIn).reverse()]);
+          g = g.filter(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.5);
+          return g.length ? g : null;
+        } catch (e) { }
+      }
+      return null;
+    }
     // outline -> opening in the frame, press-fit collar and visible base of the piece
     function shapeCell(c, orig, concave) {
       // first with the wide seam rib, then (a cell too small for it) with the normal rib on its seam edges too
@@ -838,27 +903,22 @@
             // no other cell across this edge: it faces the outer frame
             if (edgeDist(m) > 3) return null;
             const q = [m[0] + nx * 0.6, m[1] + ny * 0.6];
-            if (inside(region, q) && cells.some(o => o !== c && !o.ghost && o.mergedInto !== c && o.kind !== 'merged' && q[0] >= o.bb.x0 && q[0] <= o.bb.x1 && q[1] >= o.bb.y0 && q[1] <= o.bb.y1 && inside(o.poly, q))) return null;
+            // a sliver of a cell (too small for a piece) does not stop the body: it reaches over it to the outline
+            if (inside(region, q) && cells.some(o => o !== c && !o.ghost && o.mergedInto !== c && o.kind !== 'merged' && !(o.area < 60 && onEdge(o) && !o.collar && !roomForPiece(o)) && q[0] >= o.bb.x0 && q[0] <= o.bb.x1 && q[1] >= o.bb.y0 && q[1] <= o.bb.y1 && inside(o.poly, q))) return null;
             return edgeDist(m);   // a simplified edge can cut inside the region: reach the outline anyway
           });
           if (outEdge.some(v => v !== null)) bodyDs = outEdge.map(v => v === null ? gap / 2 : -(rim + v)); else outEdge = null;
         }
-        const body = inset(c.poly, bodyDs, concave);
+        // an edge piece's body reaches out over the rail and may bend where its outer edges meet the curve
+        let body = inset(c.poly, bodyDs, concave) || (outEdge ? inset(c.poly, bodyDs, true) : null);
+        if (body && outEdge && body.length === c.poly.length) body = snapToOutline(body, outEdge.map(v => v !== null));
         if (opening && collar && body && area(collar) > 12) {
           c.opening = opening; c.collar = collar; c.body = body; c.wrap = null;
           c.outE = outEdge ? outEdge.map(v => v !== null) : null;   // edges on the panel's edge: the skirt holds them up
           if (outEdge) {
             // the skirt: the band of the body outside the outer rail, from the wall up to the body
             // the clipping library can trip on nearly touching edges: retry on a slightly shifted grid
-            for (const sh of [0, 0.0007, -0.0013]) {
-              try {
-                const rg = q => { const r = q.map(v => [Math.round((v[0] + sh) * 1000) / 1000, Math.round((v[1] - sh) * 1000) / 1000]); r.push(r[0]); return r; };
-                let g = root.polygonClipping.intersection([rg(body)], [rg(outer), rg(skirtIn).reverse()]);
-                g = g.filter(poly => Math.abs(area(poly[0].slice(0, -1))) > 0.5);
-                if (g.length) c.wrap = g;
-                break;
-              } catch (e) { c.wrap = null; }
-            }
+            c.wrap = wrapOf(body);
           }
           // the same small 45° bevel from the frame on every piece. Next to a tile seam the rib is wider than the
           // bevel reaches, so there the piece's underside rests flat on the rib (c.ledge) and the bevel starts
@@ -883,7 +943,8 @@
       const keys = ['poly', 'seam', 'opening', 'collar', 'body', 'wrap', 'outE', 'chamfer', 'ledge', 'c'];
       const grow = p => { const cc = centroid(p); return p.map(v => [cc[0] + (v[0] - cc[0]) * 1.002, cc[1] + (v[1] - cc[1]) * 1.002]); };
       const rg = p => { const r = q3(p); r.push(r[0]); return r; };
-      for (const b of cells) {
+      // twice: a piece that took one cut-off cell can then reach the next one
+      for (let pass = 0; pass < 2; pass++) for (const b of cells) {
         if (b.kind !== 'blank' || b.ghost || tz.motif || !onEdge(b)) continue;
         const share = new Map();
         for (let i = 0; i < b.poly.length; i++) {
@@ -916,6 +977,56 @@
       }
     }
     const pieces = cells.filter(c => c.kind === 'piece');
+    let edgeOpen = 0;   // hidden frame: stretches of the panel's edge no piece could reach
+    if (hideRim) {
+      // Along the panel's edge every piece ends a gap's width from the next one. Where a tessellation cell is only a
+      // sliver outside the region (or a cut-off cell too small for a piece), nothing covered that stretch and the
+      // frame's outer rail showed through the band. The pieces on both sides now reach along the edge until only the
+      // normal gap is left between them: each end corner slides along the outline (its side edge turns a little).
+      const R = outer.length, cum = [0];
+      for (let k = 0; k < R; k++) { const a = outer[k], b = outer[(k + 1) % R]; cum.push(cum[k] + Math.hypot(b[0] - a[0], b[1] - a[1])); }
+      const per = cum[R];
+      const paramOf = p => { let best = 0, bd = Infinity; for (let k = 0; k < R; k++) { const a = outer[k], b = outer[(k + 1) % R], ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * ex + (p[1] - a[1]) * ey) / l2)), d = Math.hypot(p[0] - a[0] - ex * t, p[1] - a[1] - ey * t); if (d < bd) { bd = d; best = cum[k] + t * Math.sqrt(l2); } } return best; };
+      const pointAt = t => { t = ((t % per) + per) % per; let k = 0; while (k < R - 1 && cum[k + 1] < t) k++; const a = outer[k], b = outer[(k + 1) % R], L = cum[k + 1] - cum[k] || 1, u = (t - cum[k]) / L; return [a[0] + (b[0] - a[0]) * u, a[1] + (b[1] - a[1]) * u]; };
+      // real corners of the outline (a curve made of many short edges turns only a little at each point)
+      const corner = [];
+      for (let k = 0; k < R; k++) { const a = outer[(k - 1 + R) % R], v = outer[k], b = outer[(k + 1) % R]; let turn = Math.abs(Math.atan2(b[1] - v[1], b[0] - v[0]) - Math.atan2(v[1] - a[1], v[0] - a[0])); if (turn > Math.PI) turn = 2 * Math.PI - turn; if (turn > 0.35) corner.push(cum[k]); }
+      const ev = [];
+      for (const c of pieces) {
+        if (!c.outE || !c.wrap) continue;
+        const n = c.body.length;
+        for (let i = 0; i < n; i++) {
+          const pe = c.outE[(i - 1 + n) % n], ne = c.outE[i];
+          if (pe === ne) continue;
+          ev.push({ c, i, t: paramOf(c.body[i]), start: ne });
+        }
+      }
+      ev.sort((a, b) => a.t - b.t);
+      const moved = new Set();
+      const blankNear = p => cells.some(o => o.kind === 'blank' && !o.ghost && o.poly.some(v => Math.hypot(v[0] - p[0], v[1] - p[1]) < rim + 4) && inside(inset(o.poly, -(rim + 1), true) || o.poly, p));
+      for (let k = 0; k < ev.length; k++) {
+        const A = ev[k], B = ev[(k + 1) % ev.length];
+        if (A.start || !B.start || A.c === B.c) continue;   // an end followed by the next piece's start
+        let g = B.t - A.t; if (g < 0) g += per;
+        if (g <= gap + 0.05 || g > Math.max(12, 3 * rim)) { if (g > 1) edgeOpen++; continue; }
+        const mid = pointAt(A.t + g / 2);
+        if (blankNear(mid)) { edgeOpen++; continue; }
+        // stop at a corner of the panel: each side keeps to its own edge
+        const cIn = corner.map(t => { let d = t - A.t; if (d < 0) d += per; return d; }).filter(d => d > 0.01 && d < g - 0.01);
+        let tA = A.t + (g - gap) / 2, tB = B.t - (g - gap) / 2;
+        if (cIn.length) { const dc = Math.min(...cIn); tA = Math.min(tA, A.t + dc); tB = Math.max(tB, A.t + dc + gap); }
+        for (const [E2, t] of [[A, tA], [B, tB]]) {
+          const c = E2.c, p = pointAt(t), old = c.body[E2.i];
+          c.body[E2.i] = p;
+          const w = wrapOf(c.body);
+          if (!w || !simpleCCW(c.body)) { c.body[E2.i] = old; continue; }
+          c.wrap = w; moved.add(c);
+          const q = c.collar[E2.i], dx = q[0] - p[0], dy = q[1] - p[1], L = Math.hypot(dx, dy);
+          c.ledge[E2.i] = L <= bevel ? q : [p[0] + dx * bevel / L, p[1] + dy * bevel / L];
+        }
+      }
+      moved.forEach(c => { c.c = centroid(c.body); });
+    }
     if (!pieces.length) throw new Error('אין אף תא שגדול מספיק לחלק. הגדל את גודל התא או את הפאנל.');
 
     // ---- wall-hanging keyholes in the four corners ----
@@ -1415,8 +1526,9 @@
     const maxOv = (pr.overhang ?? 45) * Math.PI / 180;
     pieces.forEach(c => {
       // a little steeper than the limit, so the bevel's uneven corners stay under it too
-      c.bv = { t, tan: Math.tan(Math.max(0.2, maxOv - 3 * Math.PI / 180)), out: c.outE || null };
+      c.bv = { t, tan: Math.tan(Math.max(0.2, maxOv - 3 * Math.PI / 180)), out: c.outE || null, ledgeD: rim + half + clr, clip: hideRim && c.wrap ? outer : null, skirtIn: hideRim ? skirtIn : null };
       splitBase(c);
+      curveBase(c);
       let h = sf.minH + sf.depth * c.s;
       if (mv.pull) h *= (1 + mv.pull * (c.fm / Math.max(1e-6, fmax) - 0.5));
       c.zr = 0; c.h = h; c.skirt = 0;
@@ -1452,6 +1564,7 @@
     // hidden outer frame: the outer sloped faces of an edge piece carry on down, in the same plane, toward the wall.
     // They all stop at one line around the panel: the outline pushed out by the shortest reach of any face, so the
     // edge stays one clean line; a face that would reach further is cut upright there and drops straight to the wall
+    let edgeBand = null;   // hidden frame: the band round the edge (its reach past the outline, height of its upright drop)
     if (hideRim) {
       const shiftFor = (B, out) => d => B.map((v, i) => {
         const n = B.length, ip = (i - 1 + n) % n, a = B[ip], b2 = B[(i + 1) % n];
@@ -1460,6 +1573,9 @@
         const n1 = [e1[1] / l1, -e1[0] / l1], n2 = [e2[1] / l2, -e2[0] / l2];   // outward normals of the edge before / after
         const d1 = out[ip] ? d[ip] : 0, d2 = out[i] ? d[i] : 0;
         if (!d1 && !d2) return v.slice();
+        // the end of a run: straight out from the panel's edge, so the band ends square at every gap (following the
+        // side edge, which can run almost along the edge, made long slanted ends that ran into the next piece's band)
+        if (out[ip] !== out[i]) return out[i] ? [v[0] + n2[0] * d2, v[1] + n2[1] * d2] : [v[0] + n1[0] * d1, v[1] + n1[1] * d1];
         const cr = n1[0] * n2[1] - n1[1] * n2[0];
         if (Math.abs(cr) < 0.05) { const k = (d1 + d2) / 2; return [v[0] + (n1[0] + n2[0]) / 2 * k, v[1] + (n1[1] + n2[1]) / 2 * k]; }
         return [v[0] + (d1 * n2[1] - d2 * n1[1]) / cr, v[1] + (n1[0] * d2 - n2[0] * d1) / cr];   // p·n1 = v·n1 + d1, p·n2 = v·n2 + d2
@@ -1511,6 +1627,15 @@
             const hit = rayExit(edgeLine, v, [ux / L, uy / L]);
             if (hit !== null && hit < L + 3 * c.z0) { Bc[i] = [v[0] + ux / L * hit, v[1] + uy / L * hit]; }
           });
+          // a body corner on a corner of the panel (a cell whose corner sits on the region's corner) goes to the band's
+          // corner, so the band turns the corner with it
+          B.forEach((v, i) => {
+            if (!out[i] && !out[(i - 1 + B.length) % B.length]) return;
+            const k = outer.findIndex(q => Math.hypot(q[0] - v[0], q[1] - v[1]) < 0.01);
+            if (k < 0) return;
+            const e = edgeLine.length === outer.length ? edgeLine[k] : null;
+            if (e && Math.hypot(e[0] - v[0], e[1] - v[1]) < 4 * dmin) Bc[i] = e.slice();
+          });
           if (Bc.some((q, i) => Math.hypot(q[0] - B[i][0], q[1] - B[i][1]) > 6 * c.z0)) return;   // a very sharp corner: keep the plain skirt
           // height where each vertex's sloped edge would meet the line (each face in its own plane)
           const zc = B.map((v, i) => { const ln = Math.hypot(Bn[i][0] - v[0], Bn[i][1] - v[1]), lc = Math.hypot(Bc[i][0] - v[0], Bc[i][1] - v[1]); return ln < 1e-6 ? 0.2 : Math.min(zt - 0.2, Math.max(0.2, zt * (1 - lc / ln))); });
@@ -1527,6 +1652,7 @@
           zAll.sort((a, b) => a - b);
           const zE = zAll[Math.floor(zAll.length / 2)];
           pieces.forEach(c => { if (c.flare) c.flare.zc = c.flare.zc.map(() => Math.min(c.z0 - 0.21, zE)); });
+          edgeBand = { d: dmin, z: zE };
         }
       }
     }
@@ -1542,7 +1668,7 @@
       if (bare) warnings.push({ kind: 'warn', text: `${bare} חיבורים בין אריחים נשארו בלי חבק, כי לא היה מקום בטוח לשים אותו. אפשר לקצר את "אורך החבק" או להגדיל את גודל התא.` });
     }
     if (hideRim) {
-      const openEdge = tz.motif ? 0 : cells.filter(c => c.kind === 'blank' && !c.ghost && onEdge(c)).length + rimCells.filter(r => Math.abs(area(r.tpoly)) > 4).length;
+      const openEdge = tz.motif ? 0 : edgeOpen;
       if (openEdge) warnings.push({ kind: 'info', text: `המסגרת ההיקפית מוסתרת, אבל ${openEdge} מקומות בשוליים קטנים מדי לחלק, ושם המסגרת נראית. אפשר לשנות מעט את גודל התא או את גודל הפאנל.` });
     }
     if (shortened) warnings.push({ kind: 'info', text: `${shortened} קודקודים קוצרו כדי שלא ייכנסו בשכנים או כדי שיודפסו בלי תמיכות. אפשר להוריד את ה"הטיה" או את ה"קימור", או להעלות את "גובה מינימלי".` });
@@ -1583,7 +1709,7 @@
     if (big.length) warnings.push({ kind: 'warn', text: `${big.length} חלקים רחבים ממשטח ההדפסה.` });
 
     return {
-      outer, region, frameOuter, hideRim, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank' && !c.ghost), seams,
+      outer, region, frameOuter, hideRim, edgeBand, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank' && !c.ghost), seams,
       tiles: usedTiles, tileGrid: P, islandPolys, clamps, clampSpec: CS, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominals && pieces.length ? pieces.reduce((s, c) => s + c.nom, 0) / pieces.length : tz.nominal, motif: !!tz.motif,
       bounds: ob
     };
@@ -1742,6 +1868,23 @@
       for (let k = 1; k < N; k++) { const tt = k / N; c.layers.push({ z: c.z0 + c.hb * tt, poly: section(tt).poly }); }
       c.apex = at(1); c.zApex = c.z0 + c.hb;
     }
+    // hidden frame: nothing of an edge piece may stand out past the panel's edge, or it pokes out of the band round
+    // the edge. A bulge (twist, curve) that leans out is pressed back onto the outline (a convex shape, so the faces
+    // between the moved points stay inside too)
+    if (c.bv && c.bv.clip) {
+      const O = c.bv.clip, onto = q => {
+        if (inside(O, q)) return q;
+        let best = null, bd = Infinity;
+        for (let k = 0; k < O.length; k++) {
+          const a = O[k], b = O[(k + 1) % O.length], ex = b[0] - a[0], ey = b[1] - a[1], l2 = ex * ex + ey * ey || 1;
+          const t = Math.max(0, Math.min(1, ((q[0] - a[0]) * ex + (q[1] - a[1]) * ey) / l2)), p = [a[0] + ex * t, a[1] + ey * t], d = Math.hypot(q[0] - p[0], q[1] - p[1]);
+          if (d < bd) { bd = d; best = p; }
+        }
+        return best;
+      };
+      for (const l of c.layers) { l.poly = l.poly.map(onto); if (l.ctr) l.ctr = onto(l.ctr); }
+      c.apex = onto(c.apex);
+    }
     clampBase(c);
     let x0 = c.apex[0], x1 = x0, y0 = c.apex[1], y1 = y0;
     const grow = poly => { for (const q of poly) { if (q[0] < x0) x0 = q[0]; if (q[0] > x1) x1 = q[0]; if (q[1] < y0) y0 = q[1]; if (q[1] > y1) y1 = q[1]; } };
@@ -1773,6 +1916,10 @@
     let any = false;
     for (let i = 0; i < n; i++) {
       const E2 = [(i - 1 + n) % n, i];
+      // a corner on the panel's edge (hidden frame) sits on the skirt, which holds it up: it stays at the base height,
+      // level with the band round the edge. Lifted, it left a notch with spikes beside the gap to the next piece
+      if (bv.out && (bv.out[E2[0]] || bv.out[i])) continue;
+      if (bv.skirtIn && !inside(bv.skirtIn, c.body[i])) continue;   // over the skirt too
       let p = pt(0, i);
       if (Math.max(g(E2[0], p), g(E2[1], p)) <= 1e-6) continue;
       any = true;
@@ -1836,7 +1983,28 @@
     for (let i = 0; i < n; i++) {
       const j = (i + 1) % n;
       nC.push(C[i]); nB.push(B[i]); if (nL) nL.push(c.ledge[i]); if (nO) nO.push(out[i]);
-      if (wide(i)) continue;
+      if (wide(i)) {
+        // a wide rib running out to the panel's edge: its corner there stays down on the skirt (clampBase), so the
+        // face beside the rib rises from the edge over the ledge only, and is level (lifted) beyond it
+        if (!out || !bv.ledgeD) continue;
+        const cutsW = [];
+        const atEdge = [[out[(i - 1 + n) % n], i, (i - 1 + n) % n, 0], [out[j], j, j, 1]];
+        for (const [on, v, oe, side] of atEdge) {
+          if (!on) continue;
+          const a = C[oe], b = C[(oe + 1) % n], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (L < 1e-9) continue;
+          const nx = (b[1] - a[1]) / L, ny = -(b[0] - a[0]) / L, f = q => nx * (q[0] - B[v][0]) + ny * (q[1] - B[v][1]);
+          const other = side ? B[i] : B[j], fo = f(other);
+          if (fo > -1e-6) continue;
+          const uu = Math.min(1, bv.ledgeD / -fo);   // fraction of the edge from the corner on the panel's edge
+          if (uu < 0.85) cutsW.push(side ? 1 - uu : uu);
+        }
+        cutsW.sort((a, b) => a - b).forEach(u => {
+          const lp = (P, Q) => [P[0] + (Q[0] - P[0]) * u, P[1] + (Q[1] - P[1]) * u];
+          nC.push(lp(C[i], C[j])); nB.push(lp(B[i], B[j])); if (nL) nL.push(lp(c.ledge[i], c.ledge[j])); if (nO) nO.push(out[i]);
+        });
+        continue;
+      }
       const cuts = [];
       for (const e of [(i - 1 + n) % n, j]) {
         if (!wide(e)) continue;
@@ -1852,6 +2020,46 @@
     }
     if (nC.length === n) return;
     c.collar = nC; c.body = nB; if (nL) c.ledge = nL; if (nO) { c.outE = nO; bv.out = nO; }
+  }
+  // hidden frame on a curved outline (circle, ellipse): an edge piece's outer edge is a straight chord, up to half a
+  // millimetre inside the curve, so the band round the edge dipped in at every piece. Long outer edges get points in
+  // between that sit on the outline itself (the collar inside the frame stays straight)
+  function curveBase(c) {
+    const bv = c.bv, O = bv && bv.clip, out = bv && bv.out;
+    if (!O || !out || c.body.length !== c.collar.length) return;
+    const B = c.body, C = c.collar, n = B.length;
+    const along = (p, u) => {   // where the line through p along u crosses the outline, nearest to p
+      let best = null;
+      for (let k = 0; k < O.length; k++) {
+        const a = O[k], b = O[(k + 1) % O.length], ex = b[0] - a[0], ey = b[1] - a[1], den = u[0] * ey - u[1] * ex;
+        if (Math.abs(den) < 1e-12) continue;
+        const t = ((a[0] - p[0]) * ey - (a[1] - p[1]) * ex) / den, w = ((a[0] - p[0]) * u[1] - (a[1] - p[1]) * u[0]) / den;
+        if (w >= -1e-9 && w <= 1 + 1e-9 && (best === null || Math.abs(t) < Math.abs(best))) best = t;
+      }
+      return best;
+    };
+    const nB = [], nC = [], nL = c.ledge ? [] : null, nO = [];
+    let added = 0;
+    for (let i = 0; i < n; i++) {
+      const j = (i + 1) % n;
+      nB.push(B[i]); nC.push(C[i]); if (nL) nL.push(c.ledge[i]); nO.push(out[i]);
+      if (!out[i]) continue;
+      const P = B[i], Q = B[j], L = Math.hypot(Q[0] - P[0], Q[1] - P[1]);
+      if (L < 3) continue;
+      const u = [(Q[1] - P[1]) / L, -(Q[0] - P[0]) / L];   // outward normal (CCW)
+      const mid = [(P[0] + Q[0]) / 2, (P[1] + Q[1]) / 2], sm = along(mid, u);
+      if (sm === null || Math.abs(sm) < 0.03 || Math.abs(sm) > 3) continue;   // a straight stretch of the outline
+      const k = Math.min(24, Math.max(2, Math.ceil(L / 3)));
+      for (let s = 1; s < k; s++) {
+        const f = s / k, p = [P[0] + (Q[0] - P[0]) * f, P[1] + (Q[1] - P[1]) * f], t = along(p, u);
+        if (t === null || Math.abs(t) > 3) continue;
+        const lp = (X, Y) => [X[0] + (Y[0] - X[0]) * f, X[1] + (Y[1] - X[1]) * f];
+        nB.push([p[0] + u[0] * t, p[1] + u[1] * t]); nC.push(lp(C[i], C[j])); if (nL) nL.push(lp(c.ledge[i], c.ledge[j])); nO.push(true);
+        added++;
+      }
+    }
+    if (!added) return;
+    c.body = nB; c.collar = nC; if (nL) c.ledge = nL; c.outE = nO; bv.out = nO;
   }
   function subdivide(p, q) {
     if (q <= 1) return p;
