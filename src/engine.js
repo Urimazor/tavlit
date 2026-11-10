@@ -1693,6 +1693,22 @@
       if (col.by === 'random') k = Math.floor(vals[i] * nb);
       c.band = Math.max(0, Math.min(nb - 1, k));
     });
+    // manual colours (section 7): each override is pinned to a spot on the panel (the piece's centre when it was
+    // picked) and lands on the piece whose centre is closest to it, so it survives small edits and renumbering.
+    // b = one of the chosen colours 1..n; hex = any colour from the general list. A hex that is not one of the
+    // chosen colours becomes an extra colour after them (its own spool and its own folder in the kit).
+    const colors = col.bands.map(h => h.toLowerCase()), man = Array.isArray(col.manual) ? col.manual : [];
+    for (const o of man) {
+      if (!o || !isFinite(o.x) || !isFinite(o.y)) continue;
+      let best = null, bd = Infinity;
+      for (const c of pieces) { const d = Math.hypot(c.c[0] - o.x, c.c[1] - o.y); if (d < bd) { bd = d; best = c; } }
+      if (!best || bd > Math.max(1.5, 0.3 * Math.min(best.fp.w, best.fp.h))) continue;
+      if (typeof o.hex === 'string' && /^#[0-9a-f]{6}$/i.test(o.hex)) {
+        const h = o.hex.toLowerCase(); let k = colors.indexOf(h);
+        if (k < 0) { colors.push(h); k = colors.length - 1; }
+        best.band = k; best.manual = true;
+      } else if (Number.isInteger(o.b) && o.b >= 0 && o.b < nb) { best.band = o.b; best.manual = true; }
+    }
 
     const rowH = Math.max(4, st.tess.size * 0.6);
     pieces.sort((a, b) => {
@@ -1711,7 +1727,7 @@
     return {
       outer, region, frameOuter, hideRim, edgeBand, cells: cells.filter(c => c.kind !== 'merged'), pieces, blanks: cells.filter(c => c.kind === 'blank' && !c.ghost), seams,
       tiles: usedTiles, tileGrid: P, islandPolys, clamps, clampSpec: CS, mounts, hangLevels: { lip, hd, zs, tm }, warnings, maxZ, maxExt, nominal: tz.nominals && pieces.length ? pieces.reduce((s, c) => s + c.nom, 0) / pieces.length : tz.nominal, motif: !!tz.motif,
-      bounds: ob
+      bounds: ob, colors
     };
   }
 

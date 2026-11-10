@@ -23,7 +23,7 @@
     model.cells.forEach(c => {
       if (c.ghost) { out.push(`<path d="${polyPath(c.poly, fy)}" fill="#cfcfca" stroke="#cfcfca" stroke-width="0.3"/>`); return; }   // background of shapes in cells: solid frame
       if (c.kind === 'blank') { out.push(`<path d="${polyPath(c.poly, fy)}" fill="#cfcfca" stroke="#999" stroke-width="0.2"/>`); return; }
-      const col = st.color.bands[c.band];
+      const col = (model.colors || st.color.bands)[c.band];
       out.push(`<path d="${polyPath(c.opening, fy)}" fill="${col}" fill-opacity="0.85" stroke="#222" stroke-width="0.25"/>`);
       const ax = c.apex[0] - c.c[0], ay = c.apex[1] - c.c[1], L = Math.hypot(ax, ay);
       if (L > 1.5) {
@@ -91,10 +91,11 @@
     const names = opts.colorNames || [];
 
     // pieces by colour band
-    for (let b = 0; b < st.color.bands.length; b++) {
+    const colors = model.colors || st.color.bands;   // the chosen colours, then any extra ones painted by hand
+    for (let b = 0; b < colors.length; b++) {
       const group = model.pieces.filter(c => c.band === b);
       if (!group.length) continue;
-      const hex = st.color.bands[b];
+      const hex = colors[b];
       const items = group.map(c => {
         const m = E.pieceMesh(c, fr, { label: st.print.engrave !== false }); // number recessed in the underside
         return { w: c.fp.w, h: c.fp.h, ref: { c, m } };
@@ -191,7 +192,9 @@
   function readme(model, st, sm, pages) {
     const L = [];
     L.push(`ערכת הדפסה: ${st.name || 'פאנל'}`);
-    L.push(`גודל: ${st.shape.w}×${st.shape.h} מ"מ · ${model.pieces.length} חלקים · ${st.color.bands.length} צבעים · ${model.tiles.length} אריחי מסגרת`);
+    L.push(`גודל: ${st.shape.w}×${st.shape.h} מ"מ · ${model.pieces.length} חלקים · ${(model.colors || st.color.bands).length} צבעים · ${model.tiles.length} אריחי מסגרת`);
+    { const nm = model.pieces.filter(c => c.manual).length, extra = (model.colors || st.color.bands).length - st.color.bands.length;
+      if (nm) L.push(`${nm} חלקים נצבעו ידנית` + (extra > 0 ? `, ומהם נוספו ${extra} צבעים מעבר לצבעים שנבחרו (תיקייה נפרדת לכל צבע בתוך pieces).` : '.')); }
     L.push('');
     L.push('סדר עבודה מומלץ (Prusa MK4, PLA):');
     if (sm.fit) {
