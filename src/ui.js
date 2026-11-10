@@ -10,6 +10,8 @@ let state = loadLocal() || clone(PR.presets[1].state);
 let history = [JSON.stringify(state)], hIndex = 0;
 let model = null, buildError = null;
 let selPoint = 0, selBand = 0, addMode = null;
+// manual colouring (section 7): paint mode on/off and the picked pieces, by their centre on the panel
+let paintMode = false, paintSel = [];
 const openSecs = new Set();   // every section starts closed; a click on its title opens it
 
 function loadLocal() { try { const s = localStorage.getItem(LS_KEY); return s ? normalize(JSON.parse(s)) : null; } catch (e) { return null; } }
@@ -360,14 +362,15 @@ function renderPanel() {
   // 6 colours
   const col = s.color;
   const bandBtns = el('div', { class: 'bands' }, col.bands.map((c, i) => el('button', { class: 'band', style: `background:${c};color:${ink(c)}`, 'aria-pressed': String(i === selBand), 'aria-label': `רצועה ${i + 1}`, onclick: () => { selBand = i; renderPanel(); } }, String(i + 1))));
-  panel.append(section('color', 7, 'צבעים', `${col.bands.length} צבעים · ${name(COLBY, col.by)}`, [
+  panel.append(section('color', 7, 'צבעים', `${col.bands.length} צבעים · ${name(COLBY, col.by)}${(col.manual || []).length ? ` · ${col.manual.length} חלקים ידנית` : ''}`, [
     slider('מספר צבעים', 'גליל אחד לכל צבע', '__bands', 1, 6, 1, '', { virtual: true }),
     chips('צביעה', 'color.by', COLBY),
     col.by === 'gradient' ? slider('כיוון המעבר', '', 'color.angle', -180, 180, 1, '°') : null,
     col.by === 'random' ? el('div', { class: 'btn-row' }, el('button', { class: 'btn small', onclick: () => { col.seed = (col.seed || 1) + 1; commit(); schedule(); } }, 'ערבב מחדש')) : null,
     el('div', { class: 'field-label' }, 'רצועות, מהנמוך לגבוה'),
     el('div', { class: 'btn-row' }, bandBtns, el('button', { class: 'btn small', title: 'הפוך סדר', onclick: () => { col.bands.reverse(); selBand = col.bands.length - 1 - selBand; commit(); renderPanel(); schedule(); } }, '⇄')),
-    swatchGrid(col.bands[selBand], c => { col.bands[selBand] = c; commit(); renderPanel(); schedule(); })
+    swatchGrid(col.bands[selBand], c => { col.bands[selBand] = c; commit(); renderPanel(); schedule(); }),
+    ...manualColorUI(col)
   ]));
   // band-count slider is virtual
   const bs = panel.querySelector('#c___bands');
@@ -398,6 +401,61 @@ function renderPanel() {
   ]));
   panel.scrollTop = scroll;
   drawPlan();
+}
+// ---------- manual colouring ----------
+// Overrides live in state.color.manual as [{x, y, b}] (one of the chosen colours, 0-based) or [{x, y, hex}]
+// (any colour). x, y is the piece's centre when it was painted; the engine gives it to the nearest piece.
+function pieceColors() { return (model && model.colors) || state.color.bands; }
+function pieceAt(x, y) {
+  if (!model) return null;
+  let best = null, bd = Infinity;
+  for (const c of model.pieces) { const d = Math.hypot(c.c[0] - x, c.c[1] - y); if (d < bd) { bd = d; best = c; } }
+  return best && bd <= Math.max(1.5, 0.3 * Math.min(best.fp.w, best.fp.h)) ? best : null;
+}
+const spot = c => ({ x: Math.round(c.c[0] * 100) / 100, y: Math.round(c.c[1] * 100) / 100 });
+function setPaint(on) {
+  paintMode = on;
+  if (!on) paintSel = [];
+  renderer.domElement.classList.toggle('painting', on);
+  renderPanel(); update3D();
+}
+function togglePick(c) {
+  const i = paintSel.findIndex(p => pieceAt(p.x, p.y) === c);
+  if (i >= 0) paintSel.splice(i, 1); else paintSel.push(spot(c));
+  renderPanel(); update3D();
+}
+function paintPicked(v) {   // v = { b } or { hex } or null (back to automatic)
+  const col = state.color, sel = new Set(paintSel.map(p => pieceAt(p.x, p.y)).filter(Boolean));
+  if (!sel.size) return;
+  col.manual = (col.manual || []).filter(o => !sel.has(pieceAt(o.x, o.y)));
+  if (v) sel.forEach(c => col.manual.push(Object.assign(spot(c), v)));
+  if (!col.manual.length) delete col.manual;
+  commit(); renderPanel(); schedule();
+}
+function manualColorUI(col) {
+  const n = (col.manual || []).length, picked = paintSel.filter(p => pieceAt(p.x, p.y)).length;
+  const out = [
+    el('div', { class: 'field-label' }, 'צביעה ידנית'),
+    el('p', { class: 'hint' }, 'כברירת מחדל כל החלקים נצבעים אוטומטית לפי ההגדרות שלמעלה. כדי לצבוע חלק בעצמך, לחץ על "בחירת חלקים" וגע בחלקים בתצוגה (נגיעה נוספת מבטלת את הבחירה). אחר כך בחר להם צבע: אחד מהצבעים 1, 2, 3 שלמעלה או כל צבע מהרשימה. צבע מהרשימה שאינו אחד מהצבעים שלמעלה נוסף כגליל נוסף בערכת ההדפסה.'),
+    el('div', { class: 'btn-row' },
+      el('button', { class: 'btn small', 'aria-pressed': String(paintMode), onclick: () => setPaint(!paintMode) }, paintMode ? 'סיום בחירה' : 'בחירת חלקים'),
+      el('button', { class: 'btn small', disabled: !n, title: 'כל החלקים חוזרים לצבע האוטומטי', onclick: () => { delete col.manual; paintSel = []; commit(); renderPanel(); schedule(); } }, 'חזרה לצביעה אוטומטית'))
+  ];
+  if (n) out.push(el('p', { class: 'hint' }, `${n} חלקים צבועים ידנית.`));
+  if (paintMode) {
+    if (!picked) out.push(el('p', { class: 'hint' }, 'גע בחלק בתצוגה כדי לבחור אותו.'));
+    else {
+      out.push(el('div', { class: 'field-label' }, picked === 1 ? 'חלק אחד נבחר' : `${picked} חלקים נבחרו`));
+      out.push(el('p', { class: 'hint' }, 'מהצבעים שנבחרו:'));
+      out.push(el('div', { class: 'bands' }, col.bands.map((c, i) => el('button', { class: 'band', style: `background:${c};color:${ink(c)}`, 'aria-label': `צבע ${i + 1}`, title: `צבע ${i + 1}`, onclick: () => paintPicked({ b: i }) }, String(i + 1)))));
+      out.push(el('p', { class: 'hint' }, 'או מהרשימה הכללית:'));
+      out.push(swatchGrid(null, hex => paintPicked({ hex })));
+      out.push(el('div', { class: 'btn-row' },
+        el('button', { class: 'btn small', onclick: () => paintPicked(null) }, 'החזר את הנבחרים לאוטומטי'),
+        el('button', { class: 'btn small', onclick: () => { paintSel = []; renderPanel(); update3D(); } }, 'נקה בחירה')));
+    }
+  }
+  return out;
 }
 function ink(hex) { const n = parseInt(hex.slice(1), 16); return (0.299 * (n >> 16) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) > 150 ? '#1b211e' : '#fff'; }
 function swatchGrid(cur, pick) {
@@ -452,7 +510,7 @@ function drawPlan() {
   if (model) {
     path(model.outer); ctx.fillStyle = line; ctx.globalAlpha = 0.35; ctx.fill(); ctx.globalAlpha = 1;
     ctx.lineWidth = 1;
-    for (const c of model.pieces) { path(c.opening); ctx.fillStyle = state.color.bands[c.band]; ctx.globalAlpha = 0.28; ctx.fill(); ctx.globalAlpha = 1; }
+    for (const c of model.pieces) { path(c.opening); ctx.fillStyle = pieceColors()[c.band]; ctx.globalAlpha = 0.28; ctx.fill(); ctx.globalAlpha = 1; }
     ctx.strokeStyle = inkc; ctx.lineWidth = 1.6;
     for (const c of model.pieces) {
       const [x0, y0] = X.toPx(c.c[0], c.c[1]), tp = c.tip || c.apex, [x1, y1] = X.toPx(tp[0], tp[1]);
@@ -512,7 +570,7 @@ const nav = (() => {
   const clamp = THREE.MathUtils.clamp, HALF = Math.PI / 2;
   const target = V(0, 0, 10), q = new THREE.Quaternion(), tq = new THREE.Quaternion();
   let dist = 1000, yaw = 0, pitch = 0, free = false, sceneR = 300;
-  let anim = null, spin = null, moved = true, pivotUntil = 0, onUser = () => {};
+  let anim = null, spin = null, moved = true, pivotUntil = 0, onUser = () => {}, onTap = null;
   const reduce = matchMedia('(prefers-reduced-motion: reduce)');
   const levelQ = (y, p) => PANEL_UP.clone().multiply(new THREE.Quaternion().setFromEuler(new THREE.Euler(-p, y, 0, 'YXZ')));
   function anglesOf(qq) {
@@ -569,6 +627,17 @@ const nav = (() => {
   function planePoint(x, y) {
     const n = V(0, 0, 1).applyQuaternion(q);
     return rayAt(x, y).intersectPlane(new THREE.Plane().setFromNormalAndCoplanarPoint(n, target), V()) || target.clone();
+  }
+  // the piece under the cursor, or null
+  function pieceHit(x, y) {
+    if (!pieceGroup.visible) return null;
+    rayAt(x, y);
+    const hit = ray.intersectObjects([frameGroup, pieceGroup].filter(g => g.visible), true).find(h => !h.object.userData.cap && (!clipPlanes.length || clipPlanes[0].distanceToPoint(h.point) >= -0.01));
+    const rg = hit && hit.object.userData.ranges;
+    if (!rg) return null;
+    let lo = 0, hi = rg.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (rg[m][0] <= hit.faceIndex) lo = m; else hi = m - 1; }
+    return rg[lo][1];
   }
   function pointAt(x, y) { const p = pick(x, y); return p && p.distanceTo(camera.position) < dist * 4 ? p : planePoint(x, y); }
 
@@ -694,6 +763,7 @@ const nav = (() => {
     }
     if (!ptrs.size) pivotUntil = now + 700;
     if (e.type !== 'pointerup' || !still || ptrs.size) { if (!still) lastTap = null; return; }
+    if (onTap && pt.button === 0 && onTap(pt.x, pt.y)) { lastTap = null; spin = null; return; }   // paint mode takes the tap
     if (lastTap && now - lastTap.t < 340 && Math.hypot(pt.x - lastTap.x, pt.y - lastTap.y) < 24 && lastTap.button === pt.button) {
       lastTap = null; spin = null;
       if (pt.button === 1) { fit(); onUser(); } else if (pt.button === 0) focus(pt.x, pt.y);
@@ -728,7 +798,8 @@ const nav = (() => {
     return null;
   }
   return {
-    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick, modelBox,
+    view, fit, focus, setFree, key, orbit, pan, zoomAt, pick, pieceHit, modelBox,
+    set onTap(f) { onTap = f; },
     get free() { return free; },
     set onUser(f) { onUser = f; },
     tick(now) {
@@ -780,12 +851,20 @@ function update3D() {
     const me = new THREE.Mesh(geomFromMesh(cm), new THREE.MeshStandardMaterial({ color: cc, roughness: 0.7, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true }));
     me.castShadow = me.receiveShadow = true; addCap(me, capMaterial('#' + cc.getHexString())); frameGroup.add(me);
   }
-  state.color.bands.forEach((hex, b) => {
-    const merged = new E.Mesh();
-    model.pieces.forEach(c => { if (c.band === b) merged.append(E.pieceMesh(c, fr)); });
-    if (!merged.f.length) return;
-    const me = new THREE.Mesh(geomFromMesh(merged), new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true }));
-    me.castShadow = me.receiveShadow = true; addCap(me, capMaterial(hex)); pieceGroup.add(me);
+  // one mesh per colour (picked pieces get their own, lit up); each mesh remembers which triangles belong to
+  // which piece, so a tap in the view can tell the piece under it
+  const picked = new Set(paintSel.map(p => pieceAt(p.x, p.y)).filter(Boolean));
+  pieceColors().forEach((hex, b) => {
+    for (const sel of [false, true]) {
+      const merged = new E.Mesh(), ranges = [];
+      model.pieces.forEach(c => { if (c.band === b && picked.has(c) === sel) { ranges.push([merged.f.length / 3, c]); merged.append(E.pieceMesh(c, fr)); } });
+      if (!merged.f.length) continue;
+      const mat = new THREE.MeshStandardMaterial({ color: new THREE.Color(hex), roughness: 0.62, flatShading: true, clippingPlanes: clipPlanes, clipShadows: true });
+      if (sel) { mat.emissive = new THREE.Color('#2f8cff'); mat.emissiveIntensity = 0.55; }
+      const me = new THREE.Mesh(geomFromMesh(merged), mat);
+      me.userData.ranges = ranges;
+      me.castShadow = me.receiveShadow = true; addCap(me, capMaterial(hex)); pieceGroup.add(me);
+    }
   });
   const s = state.shape, size = Math.max(s.w, s.h);
   wall.scale.set(size * 4, size * 4, 1);
@@ -866,6 +945,7 @@ function setCam(mode, jump) {
 }
 function markCam() { document.querySelectorAll('#camViews [data-cam]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.cam === camMode))); }
 nav.onUser = () => { if (camMode) { camMode = null; markCam(); } };
+nav.onTap = (x, y) => { if (!paintMode) return false; const c = nav.pieceHit(x, y); if (c) togglePick(c); return true; };
 function resize() {
   const w = host.clientWidth, h = host.clientHeight; if (!w || !h) return;
   renderer.setSize(w, h, false); renderer.domElement.style.width = w + 'px'; renderer.domElement.style.height = h + 'px';
@@ -894,7 +974,7 @@ function rebuild() {
 function plateCount() {
   if (!model) return 0;
   let n = 0;
-  state.color.bands.forEach((_, b) => { const items = model.pieces.filter(c => c.band === b).map(c => ({ w: c.fp.w, h: c.fp.h })); if (items.length) n += E.packPlates(items, state.print).length; });
+  pieceColors().forEach((_, b) => { const items = model.pieces.filter(c => c.band === b).map(c => ({ w: c.fp.w, h: c.fp.h })); if (items.length) n += E.packPlates(items, state.print).length; });
   return n;
 }
 function weightGrams() {
@@ -910,7 +990,7 @@ function updateBar() {
   $('#kitBtn').disabled = false;
   if (model.warnings.length) model.warnings.forEach(w => msg.append(el('div', { class: w.kind === 'warn' ? 'warn' : '' }, w.text)));
   else msg.append('הכול מוכן להדפסה. כל קודקוד נבדק לזווית הדפסה בלי תמיכות ולמרחק מהשכנים.');
-  const stats = [[model.pieces.length, 'חלקים'], [state.color.bands.length, 'צבעים'], [model.tiles.length, 'אריחי מסגרת'], ...(model.clamps && model.clamps.length ? [[model.clamps.length, 'חבקים']] : []), [plateCount(), 'פלטות'], [Math.round(model.maxZ) + ' מ"מ', 'עומק'], ['≈' + Math.round(weightGrams()) + ' ג׳', 'משקל']];
+  const stats = [[model.pieces.length, 'חלקים'], [pieceColors().length, 'צבעים'], [model.tiles.length, 'אריחי מסגרת'], ...(model.clamps && model.clamps.length ? [[model.clamps.length, 'חבקים']] : []), [plateCount(), 'פלטות'], [Math.round(model.maxZ) + ' מ"מ', 'עומק'], ['≈' + Math.round(weightGrams()) + ' ג׳', 'משקל']];
   const st = $('#stats'); st.textContent = '';
   stats.forEach(([v, l]) => st.append(el('div', { class: 'stat' }, el('b', {}, String(v)), el('span', {}, l))));
 }
@@ -972,7 +1052,7 @@ $('#kitBtn').addEventListener('click', async () => {
       const hw = km.warnings.filter(w => /תלייה|חור/.test(w.text));
       if (hw.length) toast(hw.map(w => w.text).join(' '), 9000);
     }
-    const names = st.color.bands.map(h => (PR.palette.find(p => p[1] === h.toLowerCase()) || [h.slice(1)])[0]);
+    const names = (km.colors || st.color.bands).map(h => (PR.palette.find(p => p[1] === h.toLowerCase()) || [h.slice(1)])[0]);
     const { blob } = await K.buildKit(km, st, window.JSZip, { colorNames: names.map(n => /^[0-9a-f]{6}$/i.test(n) ? n : n), fitModel: model });
     await offerFile('tavlit-print-kit.zip', blob);
   } catch (e) { console.error(e); toast('יצירת הערכה נכשלה: ' + e.message, 6000); }

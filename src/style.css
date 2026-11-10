@@ -114,6 +114,7 @@ button { cursor: pointer; }
 .stage-note { position: absolute; bottom: 10px; inset-inline-end: 12px; max-width: calc(100% - 24px); font-size: 11.5px; color: var(--muted); z-index: 2; pointer-events: none; }
 #view3d canvas { touch-action: none; cursor: grab; }
 #view3d canvas.grabbing { cursor: grabbing; }
+#view3d canvas.painting:not(.grabbing):not(.panning) { cursor: crosshair; }
 #view3d canvas.panning { cursor: move; }
 .seg button#navHelpBtn { font-weight: 600; min-width: 34px; }
 .section-bar { position: absolute; z-index: 3; bottom: 34px; left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; box-shadow: 0 4px 16px rgba(0,0,0,.14); font-size: 12.5px; max-width: calc(100% - 24px); }
@@ -134,6 +135,7 @@ button { cursor: pointer; }
 
 .bar { grid-area: bar; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding-block: 10px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); border-top: 1px solid var(--line); background: var(--panel); }
 .primary { background: var(--accent); color: var(--accent-ink); border: 0; border-radius: var(--r); padding: 10px 18px; font-weight: 600; display: inline-flex; gap: 8px; align-items: center; }
+.btn[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
 .primary:disabled { opacity: .55; cursor: progress; }
 .primary svg { width: 18px; height: 18px; }
 .msg { flex: 1 1 260px; min-width: 0; font-size: 12.5px; color: var(--muted); }
